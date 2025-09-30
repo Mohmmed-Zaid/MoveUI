@@ -3,7 +3,7 @@ export const config = {
   // Spring Boot Backend Configuration
   api: {
     // Change this to your Spring Boot backend URL
-    baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api',
+    baseUrl: import.meta.env.VITE_API_BASE_URL || 'https://move-server-66eb.onrender.com/api',
     timeout: 30000, // 30 seconds
     // For production, use your domain
     // baseUrl: import.meta.env.VITE_API_BASE_URL || 'https://your-domain.com/api',

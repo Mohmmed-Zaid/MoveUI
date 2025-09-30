@@ -95,7 +95,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const validateTokenInBackground = async (token: string, currentUser: User) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/auth/validate`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'https://move-server-66eb.onrender.com/api'}/auth/validate`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
