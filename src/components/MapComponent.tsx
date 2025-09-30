@@ -52,42 +52,42 @@ interface MapUpdaterProps {
 
 const MapUpdater: React.FC<MapUpdaterProps> = ({ route, currentLocation }) => {
   const map = useMap();
-  const [hasInitializedRoute, setHasInitializedRoute] = useState(false);
   const routeIdRef = useRef<string | null>(null);
+  const hasSetBoundsRef = useRef(false);
 
   useEffect(() => {
-    // Check if this is a new route
-    const isNewRoute = route && route.id !== routeIdRef.current;
-    
-    if (route && (isNewRoute || !hasInitializedRoute)) {
-      // Update the route ID ref
+    // Only update map view when we have a new route
+    if (route && route.id !== routeIdRef.current) {
       routeIdRef.current = route.id;
+      hasSetBoundsRef.current = false;
       
-      const group = new L.FeatureGroup([
-        L.marker([route.from.lat, route.from.lng]),
-        L.marker([route.to.lat, route.to.lng])
-      ]);
-      
-      // Add current location to bounds only if tracking is active and it's not a new route
-      if (currentLocation && !isNewRoute) {
-        group.addLayer(L.marker([currentLocation.lat, currentLocation.lng]));
-      }
-      
-      map.fitBounds(group.getBounds(), { padding: [50, 50] });
-      setHasInitializedRoute(true);
-    } else if (!route && currentLocation && !hasInitializedRoute) {
-      // Only center on current location if no route exists
-      map.setView([currentLocation.lat, currentLocation.lng], 16);
-    }
-  }, [route, currentLocation, map, hasInitializedRoute]);
-
-  // Reset initialization flag when route is cleared
-  useEffect(() => {
-    if (!route) {
-      setHasInitializedRoute(false);
+      // Small delay to ensure route is rendered
+      setTimeout(() => {
+        if (!hasSetBoundsRef.current) {
+          const group = new L.FeatureGroup([
+            L.marker([route.from.lat, route.from.lng]),
+            L.marker([route.to.lat, route.to.lng])
+          ]);
+          
+          map.fitBounds(group.getBounds(), { 
+            padding: [50, 50],
+            maxZoom: 15
+          });
+          
+          hasSetBoundsRef.current = true;
+        }
+      }, 100);
+    } else if (!route) {
+      // Reset when route is cleared
       routeIdRef.current = null;
+      hasSetBoundsRef.current = false;
+      
+      // Center on current location if available
+      if (currentLocation) {
+        map.setView([currentLocation.lat, currentLocation.lng], 16);
+      }
     }
-  }, [route]);
+  }, [route?.id, map, currentLocation, route]);
 
   return null;
 };
@@ -206,7 +206,7 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
     }
 
     if (isLiveTracking) {
-      return; // Already tracking
+      return;
     }
 
     setLocationError(null);
@@ -226,7 +226,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
         
         setCurrentLocation(locationData);
 
-        // Dispatch event for other components
         window.dispatchEvent(new CustomEvent('liveLocationUpdate', {
           detail: { latitude, longitude, address, accuracy }
         }));
@@ -244,8 +243,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
     );
 
     setWatchId(id);
-
-    // Dispatch event for other components
     window.dispatchEvent(new CustomEvent('liveTrackingStarted'));
   };
 
@@ -257,8 +254,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
     }
     
     setIsLiveTracking(false);
-
-    // Dispatch event for other components
     window.dispatchEvent(new CustomEvent('liveTrackingStopped'));
   };
 
@@ -322,7 +317,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
               </Popup>
             </Marker>
             
-            {/* Accuracy circle */}
             {currentLocation.accuracy && (
               <Circle
                 center={[currentLocation.lat, currentLocation.lng]}
@@ -383,7 +377,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
 
       {/* Floating Location Controls */}
       <div className="absolute top-4 right-4 z-[1000] flex flex-col space-y-2">
-        {/* Current Location Button */}
         <button
           onClick={handleGetCurrentLocation}
           disabled={isGettingLocation || isLiveTracking}
@@ -412,7 +405,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
           </div>
         </button>
 
-        {/* Live Tracking Toggle */}
         {!isLiveTracking ? (
           <button
             onClick={handleStartLiveTracking}
@@ -456,7 +448,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
         )}
       </div>
 
-      {/* Error Message */}
       {locationError && (
         <div className={`absolute bottom-20 left-4 right-4 z-10 p-3 backdrop-blur-lg rounded-lg shadow-lg border ${
           isDark 
@@ -467,7 +458,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
         </div>
       )}
 
-      {/* Route Information Overlay */}
       {route && (
         <div className={`absolute top-4 left-4 z-10 backdrop-blur-sm rounded-lg p-4 shadow-lg border ${
           isDark 
@@ -494,7 +484,6 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
         </div>
       )}
 
-      {/* Bottom Attribution */}
       <div className={`absolute bottom-2 right-2 z-10 text-xs px-2 py-1 rounded backdrop-blur-sm ${
         isDark 
           ? 'bg-slate-800/70 text-slate-400' 
