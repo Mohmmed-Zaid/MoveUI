@@ -1,7 +1,7 @@
 import axios from 'axios';
 import config from '../config/environment';
 
-const BASE_URL = 'https://move-server-66eb.onrender.com';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://move-server-66eb.onrender.com';
 
 const api = axios.create({
   baseURL: config.api.baseUrl || BASE_URL + '/api',
