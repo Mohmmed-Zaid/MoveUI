@@ -52,23 +52,42 @@ interface MapUpdaterProps {
 
 const MapUpdater: React.FC<MapUpdaterProps> = ({ route, currentLocation }) => {
   const map = useMap();
+  const [hasInitializedRoute, setHasInitializedRoute] = useState(false);
+  const routeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (route) {
+    // Check if this is a new route
+    const isNewRoute = route && route.id !== routeIdRef.current;
+    
+    if (route && (isNewRoute || !hasInitializedRoute)) {
+      // Update the route ID ref
+      routeIdRef.current = route.id;
+      
       const group = new L.FeatureGroup([
         L.marker([route.from.lat, route.from.lng]),
         L.marker([route.to.lat, route.to.lng])
       ]);
       
-      if (currentLocation) {
+      // Add current location to bounds only if tracking is active and it's not a new route
+      if (currentLocation && !isNewRoute) {
         group.addLayer(L.marker([currentLocation.lat, currentLocation.lng]));
       }
       
       map.fitBounds(group.getBounds(), { padding: [50, 50] });
-    } else if (currentLocation) {
+      setHasInitializedRoute(true);
+    } else if (!route && currentLocation && !hasInitializedRoute) {
+      // Only center on current location if no route exists
       map.setView([currentLocation.lat, currentLocation.lng], 16);
     }
-  }, [route, currentLocation, map]);
+  }, [route, currentLocation, map, hasInitializedRoute]);
+
+  // Reset initialization flag when route is cleared
+  useEffect(() => {
+    if (!route) {
+      setHasInitializedRoute(false);
+      routeIdRef.current = null;
+    }
+  }, [route]);
 
   return null;
 };
@@ -156,8 +175,8 @@ const MapComponent: React.FC<MapComponentProps> = ({ route, className = '' }) =>
         setCurrentLocation(locationData);
         setIsGettingLocation(false);
         
-        // Center map on location
-        if (mapRef.current) {
+        // Only center map on location if there's no active route
+        if (mapRef.current && !route) {
           mapRef.current.setView([latitude, longitude], 16);
         }
 
