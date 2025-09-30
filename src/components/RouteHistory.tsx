@@ -15,6 +15,7 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
   const { toggleFavorite, deleteRoute, refreshRoutes } = useApp();
   const [loadingRouteId, setLoadingRouteId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'favorites' | 'recent'>('all');
+  const [deletingRouteId, setDeletingRouteId] = useState<string | null>(null);
   
   const formatDistance = (distance: number) => {
     if (distance < 1000) {
@@ -40,7 +41,9 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffMinutes = Math.floor(diffMs / (1000 * 60));
 
-    if (diffMinutes < 60) {
+    if (diffMinutes < 1) {
+      return 'Just now';
+    } else if (diffMinutes < 60) {
       return `${diffMinutes}m ago`;
     } else if (diffHours < 24) {
       return `${diffHours}h ago`;
@@ -85,6 +88,7 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
       await toggleFavorite(routeId);
     } catch (error) {
       console.error('Error toggling favorite:', error);
+      alert('Failed to update favorite status. Please try again.');
     } finally {
       setLoadingRouteId(null);
     }
@@ -92,16 +96,27 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
 
   const handleDeleteRoute = async (e: React.MouseEvent, routeId: string) => {
     e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this route?')) {
-      setLoadingRouteId(routeId);
-      try {
-        await deleteRoute(routeId);
-      } catch (error) {
-        console.error('Error deleting route:', error);
-      } finally {
-        setLoadingRouteId(null);
-      }
+    
+    // Show confirmation dialog
+    const confirmed = window.confirm('Are you sure you want to delete this route? This action cannot be undone.');
+    
+    if (!confirmed) {
+      return;
     }
+
+    setDeletingRouteId(routeId);
+    try {
+      await deleteRoute(routeId);
+    } catch (error) {
+      console.error('Error deleting route:', error);
+      alert('Failed to delete route. Please try again.');
+    } finally {
+      setDeletingRouteId(null);
+    }
+  };
+
+  const handleRouteClick = (route: Route) => {
+    onSelectRoute(route);
   };
 
   const favoriteCount = routes.filter(route => route.isFavorite).length;
@@ -122,7 +137,7 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
           </h3>
           <button
             onClick={refreshRoutes}
-            className={`p-2 rounded-lg transition-colors ${
+            className={`p-2 rounded-lg transition-all duration-200 hover:scale-110 ${
               isDark 
                 ? 'hover:bg-slate-700/50 text-slate-400 hover:text-slate-200' 
                 : 'hover:bg-slate-100/50 text-slate-500 hover:text-slate-700'
@@ -152,9 +167,9 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
         : 'bg-white/80 border-slate-200/50'
     }`}>
       {/* Shimmer effect */}
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer"></div>
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-shimmer pointer-events-none"></div>
       
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 relative z-10">
         <h3 className={`text-lg font-semibold flex items-center space-x-2 ${
           isDark ? 'text-slate-200' : 'text-slate-800'
         }`}>
@@ -169,23 +184,9 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
           )}
         </h3>
         <div className="flex items-center space-x-2">
-          {/* Filter Button */}
-          <div className="relative">
-            <button
-              className={`p-2 rounded-lg transition-colors ${
-                isDark 
-                  ? 'hover:bg-slate-700/50 text-slate-400 hover:text-slate-200' 
-                  : 'hover:bg-slate-100/50 text-slate-500 hover:text-slate-700'
-              } ${filter !== 'all' ? (isDark ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-100 text-blue-600') : ''}`}
-              title="Filter routes"
-            >
-              <Filter className="w-4 h-4" />
-            </button>
-          </div>
-          
           <button
             onClick={refreshRoutes}
-            className={`p-2 rounded-lg transition-colors ${
+            className={`p-2 rounded-lg transition-all duration-200 hover:scale-110 ${
               isDark 
                 ? 'hover:bg-slate-700/50 text-slate-400 hover:text-slate-200' 
                 : 'hover:bg-slate-100/50 text-slate-500 hover:text-slate-700'
@@ -198,7 +199,7 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
       </div>
 
       {/* Filter Tabs */}
-      <div className={`flex rounded-lg p-1 mb-4 ${
+      <div className={`flex rounded-lg p-1 mb-4 relative z-10 ${
         isDark ? 'bg-slate-700/30' : 'bg-slate-100/50'
       }`}>
         {[
@@ -234,74 +235,95 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
         ))}
       </div>
       
-      <div className="space-y-3 max-h-96 overflow-y-auto">
-        {filteredAndSortedRoutes.map((route) => (
-          <div
-            key={route.id}
-            className={`p-4 rounded-lg border transition-all duration-200 hover:shadow-md text-left group relative overflow-hidden ${
-              route.isFavorite 
-                ? isDark 
-                  ? 'bg-gradient-to-r from-yellow-500/5 to-slate-700/30 border-yellow-400/20 hover:border-yellow-400/40' 
-                  : 'bg-gradient-to-r from-yellow-50/50 to-white/50 border-yellow-200/50 hover:border-yellow-300/50'
-                : isDark 
-                  ? 'bg-slate-700/30 hover:bg-slate-700/50 border-slate-600/30 hover:border-slate-500/50' 
-                  : 'bg-white/50 hover:bg-white/70 border-slate-200/50 hover:border-slate-300/50'
-            }`}
-          >
-            {/* Favorite indicator */}
-            {route.isFavorite && (
-              <div className="absolute top-2 left-2">
-                <Star className={`w-3 h-3 fill-current ${
-                  isDark ? 'text-yellow-400' : 'text-yellow-500'
-                }`} />
-              </div>
-            )}
-
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-            
-            {/* Header with time and actions */}
-            <div className="flex items-start justify-between mb-2">
-              <span className={`text-xs flex-shrink-0 ${
+      <div className="space-y-3 max-h-96 overflow-y-auto relative z-10">
+        {filteredAndSortedRoutes.length === 0 ? (
+          <div className="text-center py-8">
+            <Filter className={`w-8 h-8 mx-auto mb-2 ${
+              isDark ? 'text-slate-600' : 'text-slate-300'
+            }`} />
+            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              No {filter === 'favorites' ? 'favorite' : filter} routes found
+            </p>
+          </div>
+        ) : (
+          filteredAndSortedRoutes.map((route) => (
+            <div
+              key={route.id}
+              className={`p-4 rounded-lg border transition-all duration-200 hover:shadow-md group relative overflow-hidden cursor-pointer ${
                 route.isFavorite 
-                  ? isDark ? 'text-yellow-400' : 'text-yellow-600'
-                  : isDark ? 'text-slate-500' : 'text-slate-400'
-              }`}>
-                {formatTimestamp(route.timestamp)}
-              </span>
-              <div className="flex items-center space-x-1">
-                {/* Favorite Button */}
-                <button
-                  onClick={(e) => handleToggleFavorite(e, route.id)}
-                  disabled={loadingRouteId === route.id}
-                  className={`p-1 rounded transition-all duration-200 hover:scale-110 ${
-                    route.isFavorite 
-                      ? isDark ? 'text-yellow-400 hover:text-yellow-300' : 'text-yellow-500 hover:text-yellow-400'
-                      : isDark ? 'text-slate-500 hover:text-yellow-400' : 'text-slate-400 hover:text-yellow-500'
-                  } ${loadingRouteId === route.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  title={route.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                >
-                  <Heart className={`w-3 h-3 ${route.isFavorite ? 'fill-current' : ''}`} />
-                </button>
-                
-                {/* Delete Button */}
-                <button
-                  onClick={(e) => handleDeleteRoute(e, route.id)}
-                  disabled={loadingRouteId === route.id}
-                  className={`p-1 rounded transition-all duration-200 hover:scale-110 ${
-                    isDark ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-500'
-                  } ${loadingRouteId === route.id ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  title="Delete route"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-
-            {/* Route details */}
-            <button
-              onClick={() => onSelectRoute(route)}
-              className="w-full text-left"
+                  ? isDark 
+                    ? 'bg-gradient-to-r from-yellow-500/5 to-slate-700/30 border-yellow-400/20 hover:border-yellow-400/40' 
+                    : 'bg-gradient-to-r from-yellow-50/50 to-white/50 border-yellow-200/50 hover:border-yellow-300/50'
+                  : isDark 
+                    ? 'bg-slate-700/30 hover:bg-slate-700/50 border-slate-600/30 hover:border-slate-500/50' 
+                    : 'bg-white/50 hover:bg-white/70 border-slate-200/50 hover:border-slate-300/50'
+              } ${deletingRouteId === route.id ? 'opacity-50 pointer-events-none' : ''}`}
+              onClick={() => handleRouteClick(route)}
             >
+              {/* Favorite indicator */}
+              {route.isFavorite && (
+                <div className="absolute top-2 left-2">
+                  <Star className={`w-3 h-3 fill-current ${
+                    isDark ? 'text-yellow-400' : 'text-yellow-500'
+                  }`} />
+                </div>
+              )}
+
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"></div>
+              
+              {/* Header with time and actions */}
+              <div className="flex items-start justify-between mb-2">
+                <span className={`text-xs flex-shrink-0 ${
+                  route.isFavorite 
+                    ? isDark ? 'text-yellow-400' : 'text-yellow-600'
+                    : isDark ? 'text-slate-500' : 'text-slate-400'
+                }`}>
+                  {formatTimestamp(route.timestamp)}
+                </span>
+                <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
+                  {/* Favorite Button */}
+                  <button
+                    onClick={(e) => handleToggleFavorite(e, route.id)}
+                    disabled={loadingRouteId === route.id}
+                    className={`p-1.5 rounded-md transition-all duration-200 hover:scale-110 ${
+                      route.isFavorite 
+                        ? isDark 
+                          ? 'text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10' 
+                          : 'text-yellow-500 hover:text-yellow-400 hover:bg-yellow-100'
+                        : isDark 
+                          ? 'text-slate-500 hover:text-yellow-400 hover:bg-slate-600/50' 
+                          : 'text-slate-400 hover:text-yellow-500 hover:bg-slate-100'
+                    } ${loadingRouteId === route.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={route.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    {loadingRouteId === route.id ? (
+                      <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <Heart className={`w-4 h-4 ${route.isFavorite ? 'fill-current' : ''}`} />
+                    )}
+                  </button>
+                  
+                  {/* Delete Button */}
+                  <button
+                    onClick={(e) => handleDeleteRoute(e, route.id)}
+                    disabled={deletingRouteId === route.id}
+                    className={`p-1.5 rounded-md transition-all duration-200 hover:scale-110 ${
+                      isDark 
+                        ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10' 
+                        : 'text-slate-400 hover:text-red-500 hover:bg-red-100'
+                    } ${deletingRouteId === route.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title="Delete route"
+                  >
+                    {deletingRouteId === route.id ? (
+                      <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Route details */}
               <div className="flex-1 min-w-0 mb-2">
                 <div className="flex items-center space-x-2 mb-1">
                   <MapPin className={`w-3 h-3 flex-shrink-0 ${
@@ -325,7 +347,7 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
                 </div>
               </div>
               
-              {/* Route stats and transport mode */}
+              {/* Route stats */}
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center space-x-4">
                   <span className={`font-medium ${
@@ -338,17 +360,8 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
                   }`}>
                     {formatDuration(route.duration)}
                   </span>
-                  {route.transportMode && (
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      isDark 
-                        ? 'bg-slate-600/50 text-slate-300' 
-                        : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      {route.transportMode.toLowerCase()}
-                    </span>
-                  )}
                 </div>
-                <span className={`transition-colors ${
+                <span className={`transition-colors text-xs ${
                   isDark 
                     ? 'text-slate-500 group-hover:text-blue-400' 
                     : 'text-slate-400 group-hover:text-blue-500'
@@ -357,45 +370,30 @@ const RouteHistory: React.FC<RouteHistoryProps> = ({ routes, onSelectRoute, clas
                 </span>
               </div>
 
-              {/* Route type indicator */}
-              <div className="flex items-center justify-between mt-2">
-                {route.routeType && (
-                  <div className={`text-xs ${
-                    isDark ? 'text-slate-400' : 'text-slate-500'
-                  }`}>
-                    {route.routeType === 'FASTEST' ? '⚡ Fastest route' : 
-                     route.routeType === 'SHORTEST' ? '📏 Shortest route' : 
-                     '⚖️ Balanced route'}
+              {/* Loading overlay for delete */}
+              {deletingRouteId === route.id && (
+                <div className="absolute inset-0 bg-black/30 flex items-center justify-center rounded-lg backdrop-blur-sm">
+                  <div className="text-center">
+                    <div className={`w-6 h-6 border-3 rounded-full animate-spin mx-auto mb-2 ${
+                      isDark 
+                        ? 'border-red-400/30 border-t-red-400' 
+                        : 'border-red-500/30 border-t-red-500'
+                    }`}></div>
+                    <span className={`text-xs font-medium ${
+                      isDark ? 'text-red-300' : 'text-red-600'
+                    }`}>
+                      Deleting...
+                    </span>
                   </div>
-                )}
-                {route.isFavorite && (
-                  <div className={`text-xs font-medium px-2 py-1 rounded-full ${
-                    isDark 
-                      ? 'bg-yellow-500/20 text-yellow-400' 
-                      : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    Favorite
-                  </div>
-                )}
-              </div>
-            </button>
-
-            {/* Loading overlay for individual route actions */}
-            {loadingRouteId === route.id && (
-              <div className="absolute inset-0 bg-black/20 flex items-center justify-center rounded-lg">
-                <div className={`w-4 h-4 border-2 rounded-full animate-spin ${
-                  isDark 
-                    ? 'border-blue-400/30 border-t-blue-400' 
-                    : 'border-blue-500/30 border-t-blue-500'
-                }`}></div>
-              </div>
-            )}
-          </div>
-        ))}
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
 
       {/* Summary Stats */}
-      <div className={`mt-4 pt-4 border-t ${
+      <div className={`mt-4 pt-4 border-t relative z-10 ${
         isDark ? 'border-slate-600/50' : 'border-slate-200/50'
       }`}>
         <div className="grid grid-cols-3 gap-4 text-center">
