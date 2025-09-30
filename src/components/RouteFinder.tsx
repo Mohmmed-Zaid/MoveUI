@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Menu, X, Sparkles, MapPin, ArrowUpDown } from 'lucide-react';
 import Navbar from './Navbar';
 import RouteInput from './RouteInput';
@@ -18,6 +18,10 @@ const RouteFinder: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  
+  // Track if this is the initial load
+  const isInitialLoad = useRef(true);
+  const prevUserId = useRef<string | null>(null);
 
   const { routes, currentRoute, addRoute, setCurrentRoute, loading, setLoading } = useApp();
   const { isDark } = useTheme();
@@ -25,6 +29,9 @@ const RouteFinder: React.FC = () => {
 
   // Load saved route inputs for current user on mount and when user changes
   useEffect(() => {
+    const userIdChanged = user?.id !== prevUserId.current;
+    prevUserId.current = user?.id || null;
+
     if (user?.id) {
       const storageKey = `mapguide_route_input_${user.id}`;
       const savedRouteInput = localStorage.getItem(storageKey);
@@ -46,22 +53,31 @@ const RouteFinder: React.FC = () => {
         setFromCoords(null);
         setToCoords(null);
       }
-      setCurrentRoute(null);
+      
+      // Only clear current route if the user actually changed (not on initial load)
+      if (userIdChanged && !isInitialLoad.current) {
+        setCurrentRoute(null);
+      }
+      
       setError(null);
-    } else {
-      // No user logged in, clear everything
-      setFrom('');
-      setTo('');
-      setFromCoords(null);
-      setToCoords(null);
-      setCurrentRoute(null);
+    } else if (!user) {
+      // No user logged in, clear everything only if user changed
+      if (userIdChanged && !isInitialLoad.current) {
+        setFrom('');
+        setTo('');
+        setFromCoords(null);
+        setToCoords(null);
+        setCurrentRoute(null);
+      }
       setError(null);
     }
+    
+    isInitialLoad.current = false;
   }, [user?.id, setCurrentRoute]);
 
   // Save route inputs whenever they change (for current user)
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && !isInitialLoad.current) {
       const storageKey = `mapguide_route_input_${user.id}`;
       const routeInput = {
         from,
@@ -110,7 +126,7 @@ const RouteFinder: React.FC = () => {
         timestamp: new Date().toISOString(),
       };
 
-      addRoute(newRoute);
+      await addRoute(newRoute);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate route');
     } finally {
@@ -329,7 +345,7 @@ const RouteFinder: React.FC = () => {
       </div>
 
       {/* Custom CSS for animations */}
-      <style jsx>{`
+      <style>{`
         @keyframes float {
           0%, 100% { transform: translateY(0px) rotate(0deg); }
           33% { transform: translateY(-10px) rotate(120deg); }
