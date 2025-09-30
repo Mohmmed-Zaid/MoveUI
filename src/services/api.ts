@@ -71,23 +71,43 @@ export const authService = {
   },
 
   // Send OTP for signup
-  async sendSignupOTP(email: string) {
+    async sendSignupOTP(email: string) {
     try {
+      console.log('Sending OTP request for email:', email);
       const response = await api.post('/auth/otp/signup/send', { email });
+      console.log('OTP send response:', response.data);
       return response.data.data;
     } catch (error: any) {
-      console.error('Send signup OTP error:', error);
-      throw new Error(error.response?.data?.message || 'Failed to send OTP');
+      console.error('Send signup OTP error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        url: error.config?.url
+      });
+      
+      // Better error message extraction
+      const errorMessage = error.response?.data?.message 
+        || error.response?.data?.error 
+        || error.message 
+        || 'Failed to send OTP';
+      
+      throw new Error(errorMessage);
     }
   },
 
   // Complete signup with OTP
   async signupWithOTP(signupData: { name: string; email: string; password: string; otp: string }) {
     try {
+      console.log('Signup with OTP for email:', signupData.email);
       const response = await api.post('/auth/signup/with-otp', signupData);
+      console.log('Signup with OTP response:', response.data);
       return response.data.data;
     } catch (error: any) {
-      console.error('Signup with OTP error:', error);
+      console.error('Signup with OTP error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
       throw new Error(error.response?.data?.message || 'Signup failed');
     }
   },
