@@ -1,74 +1,97 @@
 import React, { useState } from 'react';
-import { Map, Mail, Lock, Eye, EyeOff, Sparkles, User, Shield } from 'lucide-react';
+import { Map, Mail, Lock, Eye, EyeOff, Sparkles, User, Shield, ArrowLeft, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 
+type Mode = 'login' | 'signup' | 'otp' | 'forgot' | 'reset';
+
+interface FormData {
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  otp: string;
+  newPassword: string;
+}
+
+interface Errors {
+  [key: string]: string;
+}
+
 const LoginPage: React.FC = () => {
-  const [mode, setMode] = useState<'login' | 'signup' | 'otp'>('login');
-  const [formData, setFormData] = useState({
+  const [mode, setMode] = useState<Mode>('login');
+  const [formData, setFormData] = useState<FormData>({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
     otp: '',
+    newPassword: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  const [otpSent, setOtpSent] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
   const [otpCountdown, setOtpCountdown] = useState(0);
-  
-  const { login, signup, sendOTP, verifyOTP, quickLogin, loading } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  const { login, signup, sendOTP, verifyOTP, quickLogin } = useAuth();
   const { isDark } = useTheme();
   const navigate = useNavigate();
 
-  const validateForm = () => {
-    const newErrors: { [key: string]: string } = {};
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://move-server-66eb.onrender.com/api';
+
+  const validateForm = (): boolean => {
+    const newErrors: Errors = {};
 
     if (mode === 'signup' && !formData.name.trim()) {
       newErrors.name = 'Name is required';
     }
 
-    if (!formData.email) {
+    if (!formData.email && mode !== 'reset') {
       newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    } else if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = 'Email is invalid';
     }
 
-    if (mode !== 'otp') {
+    if (mode === 'login' || mode === 'signup') {
       if (!formData.password) {
         newErrors.password = 'Password is required';
       } else if (formData.password.length < 6) {
         newErrors.password = 'Password must be at least 6 characters';
       }
 
-      if (mode === 'signup') {
-        if (!formData.confirmPassword) {
-          newErrors.confirmPassword = 'Please confirm your password';
-        } else if (formData.password !== formData.confirmPassword) {
-          newErrors.confirmPassword = 'Passwords do not match';
-        }
+      if (mode === 'signup' && formData.password !== formData.confirmPassword) {
+        newErrors.confirmPassword = 'Passwords do not match';
       }
     }
 
-    if (mode === 'otp') {
-      if (!formData.otp) {
-        newErrors.otp = 'OTP is required';
-      } else if (formData.otp.length !== 6) {
-        newErrors.otp = 'OTP must be 6 digits';
+    if (mode === 'reset') {
+      if (!formData.newPassword) {
+        newErrors.newPassword = 'New password is required';
+      } else if (formData.newPassword.length < 6) {
+        newErrors.newPassword = 'Password must be at least 6 characters';
       }
+    }
+
+    if ((mode === 'otp' || mode === 'reset') && !formData.otp) {
+      newErrors.otp = 'OTP is required';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
   };
 
@@ -88,13 +111,42 @@ const LoginPage: React.FC = () => {
   const handleResendOTP = async () => {
     try {
       setErrors({});
-      await sendOTP(formData.email);
-      setOtpSent(true);
-      startCountdown();
-    } catch (error) {
-      setErrors({
-        general: error instanceof Error ? error.message : 'Failed to resend OTP'
-      });
+      setLoading(true);
+
+      if (mode === 'reset') {
+        // For password reset OTP
+        const endpoint = `${API_BASE_URL}/auth/otp/password-reset/send`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: formData.email }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        const data = await response.json();
+
+        if (data.success) {
+          startCountdown();
+          setSuccessMessage('OTP resent successfully!');
+          setTimeout(() => setSuccessMessage(''), 3000);
+        } else {
+          setErrors({ general: data.message || 'Failed to resend OTP' });
+        }
+      } else {
+        // For signup OTP
+        await sendOTP(formData.email);
+        startCountdown();
+        setSuccessMessage('OTP resent successfully!');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    } catch (error: any) {
+      setErrors({ general: error.message || 'Failed to resend OTP. Please try again.' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -105,35 +157,87 @@ const LoginPage: React.FC = () => {
 
     try {
       setErrors({});
+      setLoading(true);
       
       if (mode === 'login') {
         await login(formData.email, formData.password);
         navigate('/app');
-      } else if (mode === 'signup') {
-        // This will store signup data temporarily and send OTP
+      } 
+      else if (mode === 'signup') {
         await signup({
           name: formData.name,
           email: formData.email,
-          password: formData.password
+          password: formData.password,
         });
-        
-        // Switch to OTP mode and start countdown
-        setOtpSent(true);
         setMode('otp');
         startCountdown();
-      } else if (mode === 'otp') {
-        // This will verify OTP and create the account
+        setSuccessMessage('OTP sent to your email!');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } 
+      else if (mode === 'otp') {
         await verifyOTP(formData.email, formData.otp);
         navigate('/app');
       }
-    } catch (error) {
-      setErrors({
-        general: error instanceof Error ? error.message : `${
-          mode === 'login' ? 'Login' : 
-          mode === 'signup' ? 'Signup' : 
-          'OTP verification'
-        } failed`
-      });
+      else if (mode === 'forgot') {
+        const endpoint = `${API_BASE_URL}/auth/otp/password-reset/send`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: formData.email }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        const data = await response.json();
+
+        if (data.success) {
+          setMode('reset');
+          startCountdown();
+          setSuccessMessage('OTP sent to your email!');
+          setTimeout(() => setSuccessMessage(''), 3000);
+        } else {
+          setErrors({ general: data.message || 'Failed to send reset OTP' });
+        }
+      }
+      else if (mode === 'reset') {
+        const endpoint = `${API_BASE_URL}/auth/password/reset`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: formData.email,
+            otp: formData.otp,
+            newPassword: formData.newPassword,
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        const data = await response.json();
+
+        if (data.success) {
+          setSuccessMessage('Password reset successful! Redirecting to login...');
+          setTimeout(() => {
+            switchMode('login');
+          }, 2000);
+        } else {
+          setErrors({ general: data.message || 'Password reset failed' });
+        }
+      }
+    } catch (error: any) {
+      console.error('Error:', error);
+      const errorMessage = error.name === 'AbortError'
+        ? 'Server is taking too long. Please wait a moment and try again.'
+        : error.message || 'An error occurred. Please try again.';
+      setErrors({ general: errorMessage });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -141,33 +245,39 @@ const LoginPage: React.FC = () => {
     try {
       await quickLogin();
       navigate('/app');
-    } catch (error) {
+    } catch (error: any) {
       setErrors({
         general: 'Quick login failed. Please use proper authentication.'
       });
     }
   };
 
-  const switchMode = (newMode: 'login' | 'signup') => {
+  const switchMode = (newMode: Mode) => {
     setMode(newMode);
-    setFormData({ name: '', email: '', password: '', confirmPassword: '', otp: '' });
+    setFormData({ 
+      name: '', 
+      email: '', 
+      password: '', 
+      confirmPassword: '', 
+      otp: '', 
+      newPassword: '' 
+    });
     setErrors({});
-    setOtpSent(false);
+    setSuccessMessage('');
     setOtpCountdown(0);
     setShowPassword(false);
     setShowConfirmPassword(false);
+    setShowNewPassword(false);
   };
 
   const goBackToSignup = () => {
     setMode('signup');
     setFormData(prev => ({ ...prev, otp: '' }));
     setErrors({});
-    setOtpSent(false);
     setOtpCountdown(0);
   };
 
   const renderQuickLoginButton = () => {
-    // Only show for development
     if (process.env.NODE_ENV !== 'development') return null;
     
     return (
@@ -210,24 +320,6 @@ const LoginPage: React.FC = () => {
         <div className={`absolute bottom-20 left-40 w-72 h-72 rounded-full mix-blend-multiply filter blur-xl animate-pulse animation-delay-4000 ${
           isDark ? 'bg-cyan-500/20' : 'bg-cyan-200/30'
         }`}></div>
-        
-        {/* Floating particles */}
-        <div className="absolute inset-0">
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className={`absolute w-2 h-2 rounded-full animate-float ${
-                isDark ? 'bg-blue-400/20' : 'bg-blue-300/40'
-              }`}
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${3 + Math.random() * 4}s`
-              }}
-            />
-          ))}
-        </div>
       </div>
 
       {/* Login/Signup Card */}
@@ -264,8 +356,8 @@ const LoginPage: React.FC = () => {
         {/* Quick Login Button */}
         {renderQuickLoginButton()}
 
-        {/* Mode Switch - Hide during OTP */}
-        {mode !== 'otp' && (
+        {/* Mode Switch - Hide during OTP, forgot, and reset */}
+        {mode !== 'otp' && mode !== 'forgot' && mode !== 'reset' && (
           <div className={`flex rounded-xl p-1 mb-6 ${
             isDark ? 'bg-slate-700/50' : 'bg-slate-100/50'
           }`}>
@@ -324,17 +416,60 @@ const LoginPage: React.FC = () => {
           </div>
         )}
 
+        {/* Forgot Password Header */}
+        {mode === 'forgot' && (
+          <div className="text-center mb-6">
+            <h3 className={`text-lg font-semibold mb-2 ${
+              isDark ? 'text-slate-200' : 'text-slate-800'
+            }`}>Forgot Password?</h3>
+            <p className={`text-sm ${
+              isDark ? 'text-slate-400' : 'text-slate-600'
+            }`}>
+              Enter your email and we'll send you an OTP to reset your password
+            </p>
+          </div>
+        )}
+
+        {/* Reset Password Header */}
+        {mode === 'reset' && (
+          <div className="text-center mb-6">
+            <h3 className={`text-lg font-semibold mb-2 ${
+              isDark ? 'text-slate-200' : 'text-slate-800'
+            }`}>Reset Password</h3>
+            <p className={`text-sm ${
+              isDark ? 'text-slate-400' : 'text-slate-600'
+            }`}>
+              Enter the OTP and your new password
+            </p>
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           {errors.general && (
-            <div className={`border rounded-lg p-3 ${
+            <div className={`border rounded-lg p-3 flex items-start gap-2 ${
               isDark 
                 ? 'bg-red-500/20 border-red-400/30' 
                 : 'bg-red-50/80 border-red-200/50'
             }`}>
-              <p className={`text-sm text-center ${
+              <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                isDark ? 'text-red-300' : 'text-red-600'
+              }`} />
+              <p className={`text-sm ${
                 isDark ? 'text-red-200' : 'text-red-700'
               }`}>{errors.general}</p>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className={`border rounded-lg p-3 ${
+              isDark 
+                ? 'bg-green-500/20 border-green-400/30' 
+                : 'bg-green-50/80 border-green-200/50'
+            }`}>
+              <p className={`text-sm text-center ${
+                isDark ? 'text-green-200' : 'text-green-700'
+              }`}>{successMessage}</p>
             </div>
           )}
 
@@ -393,6 +528,128 @@ const LoginPage: React.FC = () => {
                 )}
               </div>
             </div>
+          ) : mode === 'forgot' ? (
+            // Forgot Password - Email only
+            <div className="space-y-2">
+              <label className={`text-sm font-medium ${
+                isDark ? 'text-slate-200' : 'text-slate-700'
+              }`}>Email</label>
+              <div className="relative">
+                <Mail className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
+                  isDark ? 'text-slate-400' : 'text-slate-500'
+                }`} />
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  className={`w-full pl-10 pr-4 py-3 backdrop-blur-sm border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-200 ${
+                    isDark 
+                      ? `bg-slate-700/50 text-white placeholder-slate-400 focus:ring-blue-400/50 ${
+                          errors.email ? 'border-red-400/50' : 'border-slate-600/50'
+                        }` 
+                      : `bg-white/70 text-slate-900 placeholder-slate-500 focus:ring-blue-500/50 ${
+                          errors.email ? 'border-red-300/50' : 'border-slate-300/50'
+                        }`
+                  }`}
+                  placeholder="Enter your email"
+                />
+              </div>
+              {errors.email && <p className={`text-xs ${
+                isDark ? 'text-red-300' : 'text-red-600'
+              }`}>{errors.email}</p>}
+            </div>
+          ) : mode === 'reset' ? (
+            // Reset Password - OTP and New Password
+            <>
+              <div className="space-y-2">
+                <label className={`text-sm font-medium ${
+                  isDark ? 'text-slate-200' : 'text-slate-700'
+                }`}>Enter OTP</label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={formData.otp}
+                  onChange={(e) => handleInputChange('otp', e.target.value.replace(/\D/g, ''))}
+                  className={`w-full px-4 py-3 backdrop-blur-sm border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-200 text-center text-lg font-mono tracking-widest ${
+                    isDark 
+                      ? `bg-slate-700/50 text-white placeholder-slate-400 focus:ring-blue-400/50 ${
+                          errors.otp ? 'border-red-400/50' : 'border-slate-600/50'
+                        }` 
+                      : `bg-white/70 text-slate-900 placeholder-slate-500 focus:ring-blue-500/50 ${
+                          errors.otp ? 'border-red-300/50' : 'border-slate-300/50'
+                        }`
+                  }`}
+                  placeholder="000000"
+                />
+                {errors.otp && <p className={`text-xs ${
+                  isDark ? 'text-red-300' : 'text-red-600'
+                }`}>{errors.otp}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <label className={`text-sm font-medium ${
+                  isDark ? 'text-slate-200' : 'text-slate-700'
+                }`}>New Password</label>
+                <div className="relative">
+                  <Lock className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
+                    isDark ? 'text-slate-400' : 'text-slate-500'
+                  }`} />
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={formData.newPassword}
+                    onChange={(e) => handleInputChange('newPassword', e.target.value)}
+                    className={`w-full pl-10 pr-12 py-3 backdrop-blur-sm border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-200 ${
+                      isDark 
+                        ? `bg-slate-700/50 text-white placeholder-slate-400 focus:ring-blue-400/50 ${
+                            errors.newPassword ? 'border-red-400/50' : 'border-slate-600/50'
+                          }` 
+                        : `bg-white/70 text-slate-900 placeholder-slate-500 focus:ring-blue-500/50 ${
+                            errors.newPassword ? 'border-red-300/50' : 'border-slate-300/50'
+                          }`
+                    }`}
+                    placeholder="Enter new password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className={`absolute right-3 top-1/2 transform -translate-y-1/2 transition-colors ${
+                      isDark 
+                        ? 'text-slate-400 hover:text-slate-200' 
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                {errors.newPassword && <p className={`text-xs ${
+                  isDark ? 'text-red-300' : 'text-red-600'
+                }`}>{errors.newPassword}</p>}
+              </div>
+
+              {/* Resend OTP for reset */}
+              <div className="text-center">
+                {otpCountdown > 0 ? (
+                  <p className={`text-xs ${
+                    isDark ? 'text-slate-400' : 'text-slate-500'
+                  }`}>
+                    Resend OTP in {otpCountdown}s
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResendOTP}
+                    disabled={loading}
+                    className={`text-xs transition-colors disabled:opacity-50 ${
+                      isDark 
+                        ? 'text-blue-400 hover:text-blue-300' 
+                        : 'text-blue-600 hover:text-blue-700'
+                    }`}
+                  >
+                    {loading ? 'Sending...' : 'Resend OTP'}
+                  </button>
+                )}
+              </div>
+            </>
           ) : (
             <>
               {/* Name Field - Only for Signup */}
@@ -560,44 +817,70 @@ const LoginPage: React.FC = () => {
                 <span>
                   {mode === 'login' ? 'Signing in...' : 
                    mode === 'signup' ? 'Sending OTP...' : 
-                   'Verifying...'}
+                   mode === 'otp' ? 'Verifying...' :
+                   mode === 'forgot' ? 'Sending OTP...' :
+                   'Resetting...'}
                 </span>
               </div>
             ) : (
               mode === 'login' ? 'Sign In' : 
               mode === 'signup' ? 'Send OTP' : 
-              'Verify & Create Account'
+              mode === 'otp' ? 'Verify & Create Account' :
+              mode === 'forgot' ? 'Send Reset OTP' :
+              'Reset Password'
             )}
           </button>
 
-          {/* Back to Signup for OTP */}
+          {/* Back to Signup/Login for OTP/Reset */}
           {mode === 'otp' && (
             <button
               type="button"
               onClick={goBackToSignup}
-              className={`w-full text-sm transition-colors ${
+              className={`w-full text-sm transition-colors flex items-center justify-center gap-2 ${
                 isDark 
                   ? 'text-slate-400 hover:text-slate-200' 
                   : 'text-slate-600 hover:text-slate-800'
               }`}
             >
-              ← Back to Sign Up
+              <ArrowLeft className="w-4 h-4" />
+              Back to Sign Up
+            </button>
+          )}
+
+          {mode === 'reset' && (
+            <button
+              type="button"
+              onClick={() => switchMode('login')}
+              className={`w-full text-sm transition-colors flex items-center justify-center gap-2 ${
+                isDark 
+                  ? 'text-slate-400 hover:text-slate-200' 
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Login
             </button>
           )}
         </form>
 
         {/* Footer Links */}
-        {mode !== 'otp' && (
-          <div className="mt-8 text-center space-y-2">
-            {mode === 'login' && (
-              <button className={`text-sm transition-colors ${
+        {mode === 'login' && (
+          <div className="mt-6 text-center">
+            <button 
+              onClick={() => switchMode('forgot')}
+              className={`text-sm transition-colors ${
                 isDark 
                   ? 'text-slate-300 hover:text-white' 
                   : 'text-slate-600 hover:text-slate-800'
-              }`}>
-                Forgot Password?
-              </button>
-            )}
+              }`}
+            >
+              Forgot Password?
+            </button>
+          </div>
+        )}
+
+        {mode !== 'otp' && mode !== 'forgot' && mode !== 'reset' && (
+          <div className="mt-8 text-center">
             <div className={`text-sm ${
               isDark ? 'text-slate-400' : 'text-slate-500'
             }`}>
@@ -619,7 +902,7 @@ const LoginPage: React.FC = () => {
       </div>
 
       {/* Custom CSS */}
-      <style jsx>{`
+      <style>{`
         @keyframes float {
           0%, 100% { transform: translateY(0px) rotate(0deg); }
           33% { transform: translateY(-10px) rotate(120deg); }
