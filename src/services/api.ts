@@ -753,7 +753,7 @@ export const navigationService = {
     currentLatitude: number; 
     currentLongitude: number; 
     currentSpeed?: number;
-    timestamp?: string 
+    timestamp?: string;
   }) => {
     try {
       const response = await api.put('/navigation/update', data);
