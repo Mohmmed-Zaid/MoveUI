@@ -2,14 +2,58 @@ import axios from 'axios';
 import config from '../config/environment';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://move-server-66eb.onrender.com';
+const API_BASE = config.api.baseUrl || BASE_URL + '/api';
 
 const api = axios.create({
-  baseURL: config.api.baseUrl || BASE_URL + '/api',
+  baseURL: API_BASE,
   timeout: config.api.timeout || 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// Fetch with retry helper for critical endpoints
+const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2): Promise<Response> => {
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds for cold start
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      
+      // If response is ok, return it
+      if (response.ok || response.status >= 400) {
+        return response;
+      }
+
+      // If server error and we have retries left, retry
+      if (i < maxRetries && response.status >= 500) {
+        await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
+        continue;
+      }
+
+      return response;
+    } catch (error: any) {
+      // If it's the last retry or not a timeout, throw
+      if (i === maxRetries || error.name !== 'AbortError') {
+        if (error.name === 'AbortError') {
+          throw new Error('Server is taking too long to respond. The free tier server may be starting up. Please wait 30 seconds and try again.');
+        }
+        throw error;
+      }
+      
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, 3000 * (i + 1)));
+    }
+  }
+  
+  throw new Error('Max retries exceeded');
+};
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
@@ -48,14 +92,28 @@ api.interceptors.response.use(
 
 // ============= AUTH SERVICE =============
 export const authService = {
-  // Sign in
+  // Sign in with retry logic
   async signin(credentials: { email: string; password: string }) {
     try {
-      const response = await api.post('/auth/signin', credentials);
-      return response.data.data;
+      const response = await fetchWithRetry(
+        `${API_BASE}/auth/signin`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(credentials),
+        }
+      );
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed');
+      }
+      
+      return data.data;
     } catch (error: any) {
       console.error('Signin error:', error);
-      throw new Error(error.response?.data?.message || 'Login failed');
+      throw new Error(error.message || 'Login failed');
     }
   },
 
@@ -70,45 +128,60 @@ export const authService = {
     }
   },
 
-  // Send OTP for signup
-    async sendSignupOTP(email: string) {
+  // Send OTP for signup with retry
+  async sendSignupOTP(email: string) {
     try {
       console.log('Sending OTP request for email:', email);
-      const response = await api.post('/auth/otp/signup/send', { email });
-      console.log('OTP send response:', response.data);
-      return response.data.data;
+      
+      const response = await fetchWithRetry(
+        `${API_BASE}/auth/otp/signup/send`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        },
+        2 // 2 retries for signup OTP
+      );
+
+      const data = await response.json();
+      console.log('OTP send response:', data);
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to send OTP');
+      }
+
+      return data.data;
     } catch (error: any) {
-      console.error('Send signup OTP error:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-        url: error.config?.url
-      });
-      
-      // Better error message extraction
-      const errorMessage = error.response?.data?.message 
-        || error.response?.data?.error 
-        || error.message 
-        || 'Failed to send OTP';
-      
-      throw new Error(errorMessage);
+      console.error('Send signup OTP error:', error);
+      throw new Error(error.message || 'Failed to send OTP');
     }
   },
 
-  // Complete signup with OTP
+  // Complete signup with OTP with retry
   async signupWithOTP(signupData: { name: string; email: string; password: string; otp: string }) {
     try {
       console.log('Signup with OTP for email:', signupData.email);
-      const response = await api.post('/auth/signup/with-otp', signupData);
-      console.log('Signup with OTP response:', response.data);
-      return response.data.data;
+      
+      const response = await fetchWithRetry(
+        `${API_BASE}/auth/signup/with-otp`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(signupData),
+        }
+      );
+
+      const data = await response.json();
+      console.log('Signup with OTP response:', data);
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Signup failed');
+      }
+
+      return data.data;
     } catch (error: any) {
-      console.error('Signup with OTP error:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      });
-      throw new Error(error.response?.data?.message || 'Signup failed');
+      console.error('Signup with OTP error:', error);
+      throw new Error(error.message || 'Signup failed');
     }
   },
 
@@ -161,9 +234,11 @@ export const authService = {
     const token = localStorage.getItem('auth_token');
     if (token) {
       try {
-        await api.post('/auth/signout', {}, {
+        await fetch(`${API_BASE}/auth/signout`, {
+          method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           }
         });
       } catch (error) {
@@ -176,13 +251,27 @@ export const authService = {
     localStorage.removeItem('mapguide_user');
   },
 
-  // Refresh token
+  // Refresh token with retry
   async refresh(token: string) {
     try {
-      const response = await api.post('/auth/refresh', {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      return response.data.data;
+      const response = await fetchWithRetry(
+        `${API_BASE}/auth/refresh`,
+        {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error('Token refresh failed');
+      }
+
+      return data.data;
     } catch (error: any) {
       console.error('Token refresh error:', error);
       throw new Error('Token refresh failed');
@@ -192,35 +281,74 @@ export const authService = {
   // Get profile
   getProfile: async () => {
     try {
-      const response = await api.get('/auth/me');
-      return response.data.data;
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`${API_BASE}/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to get profile');
+      }
+
+      return data.data;
     } catch (error: any) {
       console.error('Error getting profile:', error);
-      throw new Error(error.response?.data?.message || 'Failed to get profile');
+      throw new Error(error.message || 'Failed to get profile');
     }
   },
 
   // Update profile
-  updateProfile: async (data: { name?: string; avatarUrl?: string }) => {
+  updateProfile: async (profileData: { name?: string; avatarUrl?: string }) {
     try {
-      const response = await api.put('/auth/me', data);
-      return response.data.data;
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`${API_BASE}/auth/me`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(profileData)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update profile');
+      }
+
+      return data.data;
     } catch (error: any) {
       console.error('Error updating profile:', error);
-      throw new Error(error.response?.data?.message || 'Failed to update profile');
+      throw new Error(error.message || 'Failed to update profile');
     }
   },
 
   // Validate token
-  validateToken: async (token: string) => {
+  validateToken: async (token: string) {
     try {
-      const response = await api.post('/auth/validate', {}, {
-        headers: { Authorization: `Bearer ${token}` }
+      const response = await fetch(`${API_BASE}/auth/validate`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
-      return response.data.data;
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error('Token validation failed');
+      }
+
+      return data.data;
     } catch (error: any) {
       console.error('Token validation error:', error);
-      throw new Error(error.response?.data?.message || 'Token validation failed');
+      throw new Error('Token validation failed');
     }
   },
 };
