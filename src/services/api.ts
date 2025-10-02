@@ -17,7 +17,7 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2)
   for (let i = 0; i <= maxRetries; i++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 90000);
+      const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds for cold start
 
       const response = await fetch(url, {
         ...options,
@@ -26,10 +26,12 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2)
 
       clearTimeout(timeoutId);
       
+      // If response is ok, return it
       if (response.ok || response.status >= 400) {
         return response;
       }
 
+      // If server error and we have retries left, retry
       if (i < maxRetries && response.status >= 500) {
         await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
         continue;
@@ -37,6 +39,7 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2)
 
       return response;
     } catch (error: any) {
+      // If it's the last retry or not a timeout, throw
       if (i === maxRetries || error.name !== 'AbortError') {
         if (error.name === 'AbortError') {
           throw new Error('Server is taking too long to respond. The free tier server may be starting up. Please wait 30 seconds and try again.');
@@ -44,6 +47,7 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2)
         throw error;
       }
       
+      // Wait before retry
       await new Promise(resolve => setTimeout(resolve, 3000 * (i + 1)));
     }
   }
@@ -72,10 +76,11 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       
+      // Clear invalid tokens
       localStorage.removeItem('auth_token');
-      localStorage.removeItem('refresh_token');
       localStorage.removeItem('mapguide_user');
       
+      // Redirect to login if not already there
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login';
       }
@@ -126,7 +131,7 @@ export const authService = {
   // Send OTP for signup with retry
   async sendSignupOTP(email: string) {
     try {
-      console.log('Sending signup OTP for email:', email);
+      console.log('Sending OTP request for email:', email);
       
       const response = await fetchWithRetry(
         `${API_BASE}/auth/otp/signup/send`,
@@ -135,7 +140,7 @@ export const authService = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email }),
         },
-        2
+        2 // 2 retries for signup OTP
       );
 
       const data = await response.json();
@@ -180,14 +185,10 @@ export const authService = {
     }
   },
 
-  // Verify signup OTP (non-consuming)
+  // Just verify OTP (non-consuming)
   async verifySignupOTP(email: string, otp: string) {
     try {
-      const response = await api.post('/auth/otp/signup/verify', { 
-        email, 
-        otp,
-        type: 'SIGNUP_VERIFICATION' // Backend expects this
-      });
+      const response = await api.post('/auth/otp/signup/verify', { email, otp });
       return response.data.data;
     } catch (error: any) {
       console.error('Verify signup OTP error:', error);
@@ -206,14 +207,10 @@ export const authService = {
     }
   },
 
-  // Verify password reset OTP (non-consuming)
+  // Verify password reset OTP
   async verifyPasswordResetOTP(email: string, otp: string) {
     try {
-      const response = await api.post('/auth/otp/password-reset/verify', { 
-        email, 
-        otp,
-        type: 'PASSWORD_RESET' // Backend expects this
-      });
+      const response = await api.post('/auth/otp/password-reset/verify', { email, otp });
       return response.data.data;
     } catch (error: any) {
       console.error('Verify password reset OTP error:', error);
@@ -221,7 +218,7 @@ export const authService = {
     }
   },
 
-  // Reset password with OTP (consumes OTP)
+  // Reset password with OTP
   async resetPassword(data: { email: string; otp: string; newPassword: string }) {
     try {
       const response = await api.post('/auth/password/reset', data);
@@ -356,10 +353,76 @@ export const authService = {
   },
 };
 
+// ============= OTP SERVICE =============
+// WARNING: These endpoints DO NOT exist in your backend!
+// Your backend only supports OTP through authService methods above.
+// If you need these, you must add corresponding endpoints in your backend first.
+export const otpService = {
+  // DEPRECATED: Use authService.sendSignupOTP() instead
+  // This endpoint /otp/send does NOT exist in backend
+  async sendOTP(email: string, type: 'SIGNUP_VERIFICATION' | 'PASSWORD_RESET' = 'SIGNUP_VERIFICATION') {
+    console.warn('otpService.sendOTP is deprecated. Use authService.sendSignupOTP or authService.sendPasswordResetOTP instead');
+    try {
+      const response = await api.post('/otp/send', {
+        email: email,
+        type: type
+      });
+      return response.data.data;
+    } catch (error: any) {
+      console.error('Send OTP error:', error);
+      throw new Error(error.response?.data?.message || 'Failed to send OTP');
+    }
+  },
+
+  // DEPRECATED: Use authService.verifySignupOTP() or authService.verifyPasswordResetOTP() instead
+  // This endpoint /otp/verify does NOT exist in backend
+  async verifyOTP(data: { email: string; otp: string; type?: string }) {
+    console.warn('otpService.verifyOTP is deprecated. Use authService.verifySignupOTP or authService.verifyPasswordResetOTP instead');
+    try {
+      const response = await api.post('/otp/verify', {
+        email: data.email,
+        otp: data.otp,
+        type: data.type || 'SIGNUP_VERIFICATION'
+      });
+      return response.data.data;
+    } catch (error: any) {
+      console.error('Verify OTP error:', error);
+      throw new Error(error.response?.data?.message || 'OTP verification failed');
+    }
+  },
+
+  // DEPRECATED: Use authService.signupWithOTP() instead
+  // This endpoint /otp/signup-with-otp does NOT exist in backend
+  async signupWithOtp(data: { name: string; email: string; password: string; otp: string }) {
+    console.warn('otpService.signupWithOtp is deprecated. Use authService.signupWithOTP instead');
+    try {
+      const response = await api.post('/otp/signup-with-otp', data);
+      return response.data.data;
+    } catch (error: any) {
+      console.error('Signup with OTP error:', error);
+      throw new Error(error.response?.data?.message || 'Failed to complete signup');
+    }
+  },
+
+  // This endpoint /otp/status does NOT exist in backend
+  // If you need this, add it to backend first
+  async getOtpStatus(email: string) {
+    console.warn('otpService.getOtpStatus endpoint does not exist in backend');
+    try {
+      const response = await api.get(`/otp/status/${encodeURIComponent(email)}`);
+      return response.data.data;
+    } catch (error: any) {
+      console.error('Error getting OTP status:', error);
+      throw new Error(error.response?.data?.message || 'Failed to get OTP status');
+    }
+  },
+};
+
 // ============= GEOCODE SERVICE =============
 export const geocodeService = {
   async search(query: string) {
     try {
+      // First try backend API
       const response = await api.get('/geocoding/search', {
         params: { query }
       });
@@ -376,6 +439,7 @@ export const geocodeService = {
       console.warn('Backend geocoding failed, trying direct Nominatim:', error);
     }
 
+    // Fallback to direct Nominatim API
     try {
       const nominatimResponse = await axios.get('https://nominatim.openstreetmap.org/search', {
         params: {
@@ -505,6 +569,7 @@ export const locationService = {
     }
   },
 
+  // Live location features
   async updateLiveLocation(data: {
     latitude: number;
     longitude: number;
@@ -585,6 +650,7 @@ export const routeService = {
     } catch (error: any) {
       console.error('Route calculation error:', error);
       
+      // Fallback to OSRM directly
       try {
         const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
         const osrmResponse = await axios.get(osrmUrl);
