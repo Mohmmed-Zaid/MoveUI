@@ -17,7 +17,7 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2)
   for (let i = 0; i <= maxRetries; i++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds for cold start
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
 
       const response = await fetch(url, {
         ...options,
@@ -26,12 +26,10 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2)
 
       clearTimeout(timeoutId);
       
-      // If response is ok, return it
       if (response.ok || response.status >= 400) {
         return response;
       }
 
-      // If server error and we have retries left, retry
       if (i < maxRetries && response.status >= 500) {
         await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
         continue;
@@ -39,7 +37,6 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2)
 
       return response;
     } catch (error: any) {
-      // If it's the last retry or not a timeout, throw
       if (i === maxRetries || error.name !== 'AbortError') {
         if (error.name === 'AbortError') {
           throw new Error('Server is taking too long to respond. The free tier server may be starting up. Please wait 30 seconds and try again.');
@@ -47,7 +44,6 @@ const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 2)
         throw error;
       }
       
-      // Wait before retry
       await new Promise(resolve => setTimeout(resolve, 3000 * (i + 1)));
     }
   }
@@ -76,11 +72,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       
-      // Clear invalid tokens
       localStorage.removeItem('auth_token');
+      localStorage.removeItem('refresh_token');
       localStorage.removeItem('mapguide_user');
       
-      // Redirect to login if not already there
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login';
       }
@@ -131,7 +126,7 @@ export const authService = {
   // Send OTP for signup with retry
   async sendSignupOTP(email: string) {
     try {
-      console.log('Sending OTP request for email:', email);
+      console.log('Sending signup OTP for email:', email);
       
       const response = await fetchWithRetry(
         `${API_BASE}/auth/otp/signup/send`,
@@ -140,7 +135,7 @@ export const authService = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email }),
         },
-        2 // 2 retries for signup OTP
+        2
       );
 
       const data = await response.json();
@@ -185,10 +180,14 @@ export const authService = {
     }
   },
 
-  // Just verify OTP (non-consuming)
+  // Verify signup OTP (non-consuming)
   async verifySignupOTP(email: string, otp: string) {
     try {
-      const response = await api.post('/auth/otp/signup/verify', { email, otp });
+      const response = await api.post('/auth/otp/signup/verify', { 
+        email, 
+        otp,
+        type: 'SIGNUP_VERIFICATION' // Backend expects this
+      });
       return response.data.data;
     } catch (error: any) {
       console.error('Verify signup OTP error:', error);
@@ -207,10 +206,14 @@ export const authService = {
     }
   },
 
-  // Verify password reset OTP
+  // Verify password reset OTP (non-consuming)
   async verifyPasswordResetOTP(email: string, otp: string) {
     try {
-      const response = await api.post('/auth/otp/password-reset/verify', { email, otp });
+      const response = await api.post('/auth/otp/password-reset/verify', { 
+        email, 
+        otp,
+        type: 'PASSWORD_RESET' // Backend expects this
+      });
       return response.data.data;
     } catch (error: any) {
       console.error('Verify password reset OTP error:', error);
@@ -218,7 +221,7 @@ export const authService = {
     }
   },
 
-  // Reset password with OTP
+  // Reset password with OTP (consumes OTP)
   async resetPassword(data: { email: string; otp: string; newPassword: string }) {
     try {
       const response = await api.post('/auth/password/reset', data);
@@ -353,65 +356,10 @@ export const authService = {
   },
 };
 
-// ============= OTP SERVICE =============
-export const otpService = {
-  // Send OTP
-  async sendOTP(email: string, type: 'SIGNUP_VERIFICATION' | 'PASSWORD_RESET' = 'SIGNUP_VERIFICATION') {
-    try {
-      const response = await api.post('/otp/send', {
-        email: email,
-        type: type
-      });
-      return response.data.data;
-    } catch (error: any) {
-      console.error('Send OTP error:', error);
-      throw new Error(error.response?.data?.message || 'Failed to send OTP');
-    }
-  },
-
-  // Verify OTP
-  async verifyOTP(data: { email: string; otp: string; type?: string }) {
-    try {
-      const response = await api.post('/otp/verify', {
-        email: data.email,
-        otp: data.otp,
-        type: data.type || 'SIGNUP_VERIFICATION'
-      });
-      return response.data.data;
-    } catch (error: any) {
-      console.error('Verify OTP error:', error);
-      throw new Error(error.response?.data?.message || 'OTP verification failed');
-    }
-  },
-
-  // Signup with OTP
-  async signupWithOtp(data: { name: string; email: string; password: string; otp: string }) {
-    try {
-      const response = await api.post('/otp/signup-with-otp', data);
-      return response.data.data;
-    } catch (error: any) {
-      console.error('Signup with OTP error:', error);
-      throw new Error(error.response?.data?.message || 'Failed to complete signup');
-    }
-  },
-
-  // Get OTP status
-  async getOtpStatus(email: string) {
-    try {
-      const response = await api.get(`/otp/status/${encodeURIComponent(email)}`);
-      return response.data.data;
-    } catch (error: any) {
-      console.error('Error getting OTP status:', error);
-      throw new Error(error.response?.data?.message || 'Failed to get OTP status');
-    }
-  },
-};
-
 // ============= GEOCODE SERVICE =============
 export const geocodeService = {
   async search(query: string) {
     try {
-      // First try backend API
       const response = await api.get('/geocoding/search', {
         params: { query }
       });
@@ -428,7 +376,6 @@ export const geocodeService = {
       console.warn('Backend geocoding failed, trying direct Nominatim:', error);
     }
 
-    // Fallback to direct Nominatim API
     try {
       const nominatimResponse = await axios.get('https://nominatim.openstreetmap.org/search', {
         params: {
@@ -558,7 +505,6 @@ export const locationService = {
     }
   },
 
-  // Live location features
   async updateLiveLocation(data: {
     latitude: number;
     longitude: number;
@@ -639,7 +585,6 @@ export const routeService = {
     } catch (error: any) {
       console.error('Route calculation error:', error);
       
-      // Fallback to OSRM directly
       try {
         const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
         const osrmResponse = await axios.get(osrmUrl);
