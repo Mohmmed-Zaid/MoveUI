@@ -230,7 +230,7 @@ export const authService = {
   },
 
   // Signout
-  signout: async () => {
+  async signout() {
     const token = localStorage.getItem('auth_token');
     if (token) {
       try {
@@ -279,7 +279,7 @@ export const authService = {
   },
 
   // Get profile
-  getProfile: async () => {
+  async getProfile() {
     try {
       const token = localStorage.getItem('auth_token');
       const response = await fetch(`${API_BASE}/auth/me`, {
@@ -303,7 +303,7 @@ export const authService = {
   },
 
   // Update profile
-  updateProfile: async (profileData: { name?: string; avatarUrl?: string }) {
+  async updateProfile(profileData: { name?: string; avatarUrl?: string }) {
     try {
       const token = localStorage.getItem('auth_token');
       const response = await fetch(`${API_BASE}/auth/me`, {
@@ -329,7 +329,7 @@ export const authService = {
   },
 
   // Validate token
-  validateToken: async (token: string) {
+  async validateToken(token: string) {
     try {
       const response = await fetch(`${API_BASE}/auth/validate`, {
         method: 'POST',
@@ -396,7 +396,7 @@ export const otpService = {
   },
 
   // Get OTP status
-  getOtpStatus: async (email: string) => {
+  async getOtpStatus(email: string) {
     try {
       const response = await api.get(`/otp/status/${encodeURIComponent(email)}`);
       return response.data.data;
@@ -450,7 +450,7 @@ export const geocodeService = {
     }
   },
 
-  reverseGeocode: async (lat: number, lng: number) => {
+  async reverseGeocode(lat: number, lng: number) {
     try {
       const response = await api.get('/geocoding/reverse', {
         params: { lat, lng }
@@ -483,7 +483,7 @@ export const geocodeService = {
     }
   },
 
-  getSuggestions: async (query: string) => {
+  async getSuggestions(query: string) {
     try {
       const response = await api.get('/geocoding/suggestions', {
         params: { query }
@@ -502,7 +502,7 @@ export const geocodeService = {
 
 // ============= LOCATION SERVICE =============
 export const locationService = {
-  searchLocations: async (query: string, page = 0, size = 20) => {
+  async searchLocations(query: string, page = 0, size = 20) {
     try {
       const response = await api.get('/locations/search', {
         params: { query, page, size }
@@ -514,7 +514,7 @@ export const locationService = {
     }
   },
 
-  getPopularLocations: async () => {
+  async getPopularLocations() {
     try {
       const response = await api.get('/locations/popular');
       return response.data.data;
@@ -524,7 +524,7 @@ export const locationService = {
     }
   },
 
-  getLocationsByCategory: async (category: string) => {
+  async getLocationsByCategory(category: string) {
     try {
       const response = await api.get(`/locations/category/${category}`);
       return response.data.data;
@@ -534,7 +534,7 @@ export const locationService = {
     }
   },
 
-  getNearbyLocations: async (latitude: number, longitude: number, radius = 5) => {
+  async getNearbyLocations(latitude: number, longitude: number, radius = 5) {
     try {
       const response = await api.get('/locations/nearby', {
         params: { latitude, longitude, radius }
@@ -546,7 +546,7 @@ export const locationService = {
     }
   },
 
-  reverseGeocode: async (latitude: number, longitude: number) => {
+  async reverseGeocode(latitude: number, longitude: number) {
     try {
       const response = await api.get('/locations/reverse', {
         params: { latitude, longitude }
@@ -559,14 +559,14 @@ export const locationService = {
   },
 
   // Live location features
-  updateLiveLocation: async (data: {
+  async updateLiveLocation(data: {
     latitude: number;
     longitude: number;
     accuracy?: number;
     speed?: number;
     bearing?: number;
     altitude?: number;
-  }) => {
+  }) {
     try {
       const response = await api.post('/locations/live/update', data);
       return response.data.data;
@@ -576,7 +576,7 @@ export const locationService = {
     }
   },
 
-  getCurrentLocation: async () => {
+  async getCurrentLocation() {
     try {
       const response = await api.get('/locations/live/current');
       return response.data.data;
@@ -586,7 +586,7 @@ export const locationService = {
     }
   },
 
-  toggleLocationSharing: async (enabled: boolean) => {
+  async toggleLocationSharing(enabled: boolean) {
     try {
       const response = await api.post('/locations/live/share', { enabled });
       return response.data.data;
@@ -596,7 +596,7 @@ export const locationService = {
     }
   },
 
-  stopLocationSharing: async () => {
+  async stopLocationSharing() {
     try {
       const response = await api.post('/locations/live/stop');
       return response.data.data;
@@ -693,7 +693,7 @@ export const routeService = {
     }
   },
 
-  getRouteById: async (routeId: number) => {
+  async getRouteById(routeId: number) {
     try {
       const response = await api.get(`/routes/${routeId}`);
       return response.data.data;
@@ -723,7 +723,7 @@ export const routeService = {
     }
   },
 
-  getFavoriteRoutes: async (page = 0, size = 20) => {
+  async getFavoriteRoutes(page = 0, size = 20) {
     try {
       const response = await api.get('/routes/favorites', {
         params: { page, size }
@@ -738,7 +738,7 @@ export const routeService = {
 
 // ============= NAVIGATION SERVICE =============
 export const navigationService = {
-  startNavigation: async (data: { routeId: number; startLatitude?: number; startLongitude?: number }) => {
+  async startNavigation(data: { routeId: number; startLatitude?: number; startLongitude?: number }) {
     try {
       const response = await api.post('/navigation/start', data);
       return response.data.data;
@@ -748,13 +748,13 @@ export const navigationService = {
     }
   },
 
-  updateLocation: async (data: { 
+  async updateLocation(data: { 
     sessionId: number; 
     currentLatitude: number; 
     currentLongitude: number; 
     currentSpeed?: number;
     timestamp?: string;
-  }) => {
+  }) {
     try {
       const response = await api.put('/navigation/update', data);
       return response.data.data;
@@ -764,7 +764,7 @@ export const navigationService = {
     }
   },
 
-  completeNavigation: async (sessionId: number) => {
+  async completeNavigation(sessionId: number) {
     try {
       const response = await api.put(`/navigation/complete/${sessionId}`);
       return response.data.data;
@@ -774,7 +774,7 @@ export const navigationService = {
     }
   },
 
-  stopNavigation: async (sessionId: number) => {
+  async stopNavigation(sessionId: number) {
     try {
       const response = await api.delete(`/navigation/stop/${sessionId}`);
       return response.data.data;
@@ -784,7 +784,7 @@ export const navigationService = {
     }
   },
 
-  getNavigationStatus: async () => {
+  async getNavigationStatus() {
     try {
       const response = await api.get('/navigation/status');
       return response.data.data;
@@ -794,7 +794,7 @@ export const navigationService = {
     }
   },
 
-  getNavigationHistory: async (page = 0, size = 20) => {
+  async getNavigationHistory(page = 0, size = 20) {
     try {
       const response = await api.get('/navigation/history', {
         params: { page, size }
@@ -806,7 +806,7 @@ export const navigationService = {
     }
   },
 
-  getNavigationStats: async () => {
+  async getNavigationStats() {
     try {
       const response = await api.get('/navigation/stats');
       return response.data.data;
