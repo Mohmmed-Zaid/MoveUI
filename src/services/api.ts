@@ -111,12 +111,17 @@ export const authService = {
         throw new Error(data.message || 'Login failed');
       }
       
-      // Backend returns data directly, not wrapped in data.data for signin
-      if (!data.accessToken || !data.user) {
-        throw new Error('Invalid response format from server');
+      // Handle both response formats: data.data or direct
+      if (data.data && data.data.accessToken && data.data.user) {
+        return data.data;
       }
       
-      return data;
+      // Fallback: direct response (for backward compatibility)
+      if (data.accessToken && data.user) {
+        return data;
+      }
+      
+      throw new Error('Invalid response format from server');
     } catch (error: any) {
       console.error('Signin error:', error);
       throw new Error(error.message || 'Login failed');
@@ -202,7 +207,7 @@ export const authService = {
     }
   },
 
-  // Signup with OTP
+  // Signup with OTP - AuthService handles verification and consumption
   async signupWithOTP(userData: { name: string; email: string; password: string; otp: string }) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000);
@@ -273,13 +278,36 @@ export const authService = {
   },
 
   // Reset password with OTP
-  async resetPassword(data: { email: string; otp: string; newPassword: string }) {
+  async resetPassword(email: string, otp: string, newPassword: string) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+
     try {
-      const response = await api.post('/auth/password/reset', data);
-      return response.data.data;
+      const response = await fetch(`${API_BASE}/auth/password/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          otp: otp.trim().replace(/\s+/g, ''),
+          newPassword: newPassword
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Password reset failed');
+      }
+
+      return data;
     } catch (error: any) {
-      console.error('Reset password error:', error);
-      throw new Error(error.response?.data?.message || 'Failed to reset password');
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout. Please try again.');
+      }
+      throw error;
     }
   },
 
