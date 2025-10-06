@@ -25,12 +25,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     initializeAuth();
   }, []);
 
-  // Set up automatic token refresh for authenticated users only
   useEffect(() => {
     let refreshInterval: NodeJS.Timeout;
     
     if (user && user.isAuthenticated && localStorage.getItem('auth_token')) {
-      // Refresh token every 20 minutes (before 24-hour expiry)
       refreshInterval = setInterval(() => {
         refreshToken();
       }, 20 * 60 * 1000);
@@ -45,19 +43,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const initializeAuth = async () => {
     try {
-      // First check for regular user
       const savedUser = localStorage.getItem('mapguide_user');
       const token = localStorage.getItem('auth_token');
-      
-      // Check for temp/guest user
       const tempUser = localStorage.getItem('mapguide_user_temp');
       
       if (savedUser && token) {
         try {
           const parsedUser = JSON.parse(savedUser);
           
-          // Skip token validation for now to prevent auto-logout
-          // Set user directly from localStorage
           const validatedUser: User = {
             id: parsedUser.id,
             name: parsedUser.name,
@@ -68,8 +61,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           };
           
           setUser(validatedUser);
-          
-          // Validate token in background (non-blocking)
           validateTokenInBackground(token, validatedUser);
           
         } catch (error) {
@@ -77,7 +68,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           clearAuthData();
         }
       } else if (tempUser) {
-        // Load temp/guest user
         try {
           const parsedTempUser = JSON.parse(tempUser);
           setUser(parsedTempUser);
@@ -95,21 +85,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const validateTokenInBackground = async (token: string, currentUser: User) => {
     try {
-        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'https://move-server-66eb.onrender.com/api'}/auth/validate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      const isValid = await authService.validateToken(token);
       
-      if (!response.ok) {
+      if (!isValid) {
         console.warn('Token validation failed in background, but user remains logged in');
-        // Don't logout automatically, just log the warning
       }
     } catch (error) {
       console.warn('Background token validation failed:', error);
-      // Don't logout automatically on network errors
     }
   };
 
@@ -136,7 +118,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     } catch (error) {
       console.error('Token refresh failed:', error);
-      // Don't auto logout on refresh failure
     }
   };
 
@@ -152,10 +133,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string) => {
     setLoading(true);
     try {
+      console.log('Attempting login for:', email);
+      
       const response = await authService.signin({ email, password });
       
+      console.log('Login response received:', response);
+      
       if (response && response.accessToken && response.user) {
-        // Store auth data
         localStorage.setItem('auth_token', response.accessToken);
         
         const authenticatedUser: User = {
@@ -168,9 +152,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
         
         localStorage.setItem('mapguide_user', JSON.stringify(authenticatedUser));
-        // Remove temp user if exists
         localStorage.removeItem('mapguide_user_temp');
         setUser(authenticatedUser);
+        
+        console.log('Login successful, user set:', authenticatedUser);
       } else {
         throw new Error('Invalid response format from server');
       }
@@ -183,18 +168,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // FIXED: This now just sends the OTP, doesn't create the account
   const signup = async (userData: { name: string; email: string; password: string }): Promise<void> => {
     setLoading(true);
     try {
-      // Store the signup data temporarily
+      console.log('Starting signup process for:', userData.email);
+      
       localStorage.setItem('temp_signup_data', JSON.stringify(userData));
       
-      // Send OTP to email
-      await authService.sendSignupOTP(userData.email);
+      const response = await authService.sendSignupOTP(userData.email);
+      
+      console.log('Signup OTP sent successfully:', response);
       
     } catch (error: any) {
       console.error('Signup error:', error);
+      localStorage.removeItem('temp_signup_data');
       const errorMessage = error.message || 'Failed to send signup OTP';
       throw new Error(errorMessage);
     } finally {
@@ -202,12 +189,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // FIXED: This sends the OTP
   const sendOTP = async (email: string): Promise<void> => {
     setLoading(true);
     try {
+      console.log('Sending OTP to:', email);
+      
       await authService.sendSignupOTP(email);
+      
+      console.log('OTP sent successfully');
     } catch (error: any) {
+      console.error('Send OTP error:', error);
       const errorMessage = error.message || 'Failed to send OTP';
       throw new Error(errorMessage);
     } finally {
@@ -215,74 +206,72 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Update ONLY the verifyOTP method in AuthContext.tsx
-
-const verifyOTP = async (email: string, otp: string): Promise<void> => {
-  setLoading(true);
-  try {
-    // Get the stored signup data
-    const tempSignupData = localStorage.getItem('temp_signup_data');
-    if (!tempSignupData) {
-      throw new Error('Signup data not found. Please start signup process again.');
-    }
-
-    const signupData = JSON.parse(tempSignupData);
-    
-    // Verify that email matches
-    if (signupData.email.toLowerCase().trim() !== email.toLowerCase().trim()) {
-      throw new Error('Email mismatch. Please start signup process again.');
-    }
-
-    console.log('Calling signupWithOTP with:', {
-      name: signupData.name,
-      email: signupData.email,
-      otp: otp.trim()
-    });
-
-    // Create the account with OTP
-    const response = await authService.signupWithOTP({
-      name: signupData.name,
-      email: signupData.email,
-      password: signupData.password,
-      otp: otp.trim().replace(/\s+/g, '') // Remove all whitespace
-    });
-    
-    console.log('Signup with OTP response:', response);
-    
-    if (response && response.accessToken && response.user) {
-      // Store auth data
-      localStorage.setItem('auth_token', response.accessToken);
+  const verifyOTP = async (email: string, otp: string): Promise<void> => {
+    setLoading(true);
+    try {
+      console.log('Starting OTP verification for:', email);
       
-      const authenticatedUser: User = {
-        id: response.user.id.toString(),
-        name: response.user.name,
-        email: response.user.email,
-        isAuthenticated: true,
-        createdAt: response.user.createdAt,
-        avatarUrl: response.user.avatarUrl
-      };
+      const tempSignupData = localStorage.getItem('temp_signup_data');
+      if (!tempSignupData) {
+        throw new Error('Signup data not found. Please start signup process again.');
+      }
+
+      const signupData = JSON.parse(tempSignupData);
       
-      localStorage.setItem('mapguide_user', JSON.stringify(authenticatedUser));
-      // Clean up temp data
-      localStorage.removeItem('mapguide_user_temp');
-      localStorage.removeItem('temp_signup_data');
-      setUser(authenticatedUser);
-    } else {
-      throw new Error('Invalid response format from server');
+      if (signupData.email.toLowerCase().trim() !== email.toLowerCase().trim()) {
+        throw new Error('Email mismatch. Please start signup process again.');
+      }
+
+      console.log('Calling signupWithOTP with:', {
+        name: signupData.name,
+        email: signupData.email,
+        otp: otp.trim()
+      });
+
+      const response = await authService.signupWithOTP({
+        name: signupData.name,
+        email: signupData.email,
+        password: signupData.password,
+        otp: otp.trim().replace(/\s+/g, '')
+      });
+      
+      console.log('Signup with OTP response:', response);
+      
+      if (response && response.accessToken && response.user) {
+        localStorage.setItem('auth_token', response.accessToken);
+        
+        const authenticatedUser: User = {
+          id: response.user.id.toString(),
+          name: response.user.name,
+          email: response.user.email,
+          isAuthenticated: true,
+          createdAt: response.user.createdAt,
+          avatarUrl: response.user.avatarUrl
+        };
+        
+        localStorage.setItem('mapguide_user', JSON.stringify(authenticatedUser));
+        localStorage.removeItem('mapguide_user_temp');
+        localStorage.removeItem('temp_signup_data');
+        setUser(authenticatedUser);
+        
+        console.log('Account created successfully:', authenticatedUser);
+      } else {
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error: any) {
+      console.error('Signup with OTP error:', error);
+      const errorMessage = error.message || 'OTP verification failed';
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
     }
-  } catch (error: any) {
-    console.error('Signup with OTP error:', error);
-    const errorMessage = error.message || 'OTP verification failed';
-    throw new Error(errorMessage);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const quickLogin = async (): Promise<void> => {
     setLoading(true);
     try {
-      // Create a temporary user for quick access
+      console.log('Quick login initiated');
+      
       const tempUser: User = {
         id: 'temp-' + Date.now(),
         name: 'Guest User',
@@ -291,12 +280,14 @@ const verifyOTP = async (email: string, otp: string): Promise<void> => {
         createdAt: new Date().toISOString(),
       };
       
-      // Store temporarily and remove any existing auth data
       localStorage.removeItem('mapguide_user');
       localStorage.removeItem('auth_token');
       localStorage.setItem('mapguide_user_temp', JSON.stringify(tempUser));
       setUser(tempUser);
+      
+      console.log('Quick login successful');
     } catch (error: any) {
+      console.error('Quick login error:', error);
       const errorMessage = error.message || 'Quick login failed';
       throw new Error(errorMessage);
     } finally {
@@ -308,9 +299,13 @@ const verifyOTP = async (email: string, otp: string): Promise<void> => {
     const token = localStorage.getItem('auth_token');
     
     try {
+      console.log('Logging out user');
+      
       if (token) {
         await authService.signout();
       }
+      
+      console.log('Logout successful');
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
@@ -318,7 +313,6 @@ const verifyOTP = async (email: string, otp: string): Promise<void> => {
     }
   };
 
-  // Show loading screen until initialization is complete
   if (!initialized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
