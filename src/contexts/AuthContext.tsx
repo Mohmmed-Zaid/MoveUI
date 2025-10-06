@@ -215,57 +215,69 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // FIXED: This verifies OTP and creates the account
-  const verifyOTP = async (email: string, otp: string): Promise<void> => {
-    setLoading(true);
-    try {
-      // Get the stored signup data
-      const tempSignupData = localStorage.getItem('temp_signup_data');
-      if (!tempSignupData) {
-        throw new Error('Signup data not found. Please start signup process again.');
-      }
+  // Update ONLY the verifyOTP method in AuthContext.tsx
 
-      const signupData = JSON.parse(tempSignupData);
-      
-      // Verify that email matches
-      if (signupData.email !== email) {
-        throw new Error('Email mismatch. Please start signup process again.');
-      }
-
-      // Create the account with OTP
-      const response = await authService.signupWithOTP({
-        ...signupData,
-        otp: otp
-      });
-      
-      if (response && response.accessToken && response.user) {
-        // Store auth data
-        localStorage.setItem('auth_token', response.accessToken);
-        
-        const authenticatedUser: User = {
-          id: response.user.id.toString(),
-          name: response.user.name,
-          email: response.user.email,
-          isAuthenticated: true,
-          createdAt: response.user.createdAt,
-          avatarUrl: response.user.avatarUrl
-        };
-        
-        localStorage.setItem('mapguide_user', JSON.stringify(authenticatedUser));
-        // Clean up temp data
-        localStorage.removeItem('mapguide_user_temp');
-        localStorage.removeItem('temp_signup_data');
-        setUser(authenticatedUser);
-      } else {
-        throw new Error('Invalid response format from server');
-      }
-    } catch (error: any) {
-      const errorMessage = error.message || 'OTP verification failed';
-      throw new Error(errorMessage);
-    } finally {
-      setLoading(false);
+const verifyOTP = async (email: string, otp: string): Promise<void> => {
+  setLoading(true);
+  try {
+    // Get the stored signup data
+    const tempSignupData = localStorage.getItem('temp_signup_data');
+    if (!tempSignupData) {
+      throw new Error('Signup data not found. Please start signup process again.');
     }
-  };
+
+    const signupData = JSON.parse(tempSignupData);
+    
+    // Verify that email matches
+    if (signupData.email.toLowerCase().trim() !== email.toLowerCase().trim()) {
+      throw new Error('Email mismatch. Please start signup process again.');
+    }
+
+    console.log('Calling signupWithOTP with:', {
+      name: signupData.name,
+      email: signupData.email,
+      otp: otp.trim()
+    });
+
+    // Create the account with OTP
+    const response = await authService.signupWithOTP({
+      name: signupData.name,
+      email: signupData.email,
+      password: signupData.password,
+      otp: otp.trim().replace(/\s+/g, '') // Remove all whitespace
+    });
+    
+    console.log('Signup with OTP response:', response);
+    
+    if (response && response.accessToken && response.user) {
+      // Store auth data
+      localStorage.setItem('auth_token', response.accessToken);
+      
+      const authenticatedUser: User = {
+        id: response.user.id.toString(),
+        name: response.user.name,
+        email: response.user.email,
+        isAuthenticated: true,
+        createdAt: response.user.createdAt,
+        avatarUrl: response.user.avatarUrl
+      };
+      
+      localStorage.setItem('mapguide_user', JSON.stringify(authenticatedUser));
+      // Clean up temp data
+      localStorage.removeItem('mapguide_user_temp');
+      localStorage.removeItem('temp_signup_data');
+      setUser(authenticatedUser);
+    } else {
+      throw new Error('Invalid response format from server');
+    }
+  } catch (error: any) {
+    console.error('Signup with OTP error:', error);
+    const errorMessage = error.message || 'OTP verification failed';
+    throw new Error(errorMessage);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const quickLogin = async (): Promise<void> => {
     setLoading(true);
