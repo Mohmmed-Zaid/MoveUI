@@ -128,63 +128,86 @@ export const authService = {
     }
   },
 
-  // Send OTP for signup with retry
   async sendSignupOTP(email: string) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+
     try {
-      console.log('Sending OTP request for email:', email);
-      
-      const response = await fetchWithRetry(
-        `${API_BASE}/auth/otp/signup/send`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        },
-        2 // 2 retries for signup OTP
-      );
+      const response = await fetch(`${API_BASE_URL}/otp/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email: email.trim().toLowerCase(),
+          type: 'SIGNUP_VERIFICATION'
+        }),
+        signal: controller.signal,
+      });
 
+      clearTimeout(timeoutId);
       const data = await response.json();
-      console.log('OTP send response:', data);
 
-      if (!response.ok || !data.success) {
+      if (!response.ok) {
         throw new Error(data.message || 'Failed to send OTP');
       }
 
-      return data.data;
+      return data;
     } catch (error: any) {
-      console.error('Send signup OTP error:', error);
-      throw new Error(error.message || 'Failed to send OTP');
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout. Please try again.');
+      }
+      throw error;
     }
   },
 
-  // Complete signup with OTP with retry
-  async signupWithOTP(signupData: { name: string; email: string; password: string; otp: string }) {
+  // Signup with OTP - FIXED ENDPOINT
+  async signupWithOTP(userData: { name: string; email: string; password: string; otp: string }) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+
     try {
-      console.log('Signup with OTP for email:', signupData.email);
-      
-      const response = await fetchWithRetry(
-        `${API_BASE}/auth/signup/with-otp`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(signupData),
-        }
-      );
+      console.log('Sending signup request to:', `${API_BASE_URL}/otp/signup-with-otp`);
+      console.log('Request data:', { 
+        name: userData.name, 
+        email: userData.email,
+        otp: userData.otp.trim()
+      });
 
+      const response = await fetch(`${API_BASE_URL}/otp/signup-with-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: userData.name.trim(),
+          email: userData.email.trim().toLowerCase(),
+          password: userData.password,
+          otp: userData.otp.trim().replace(/\s+/g, '') // Remove all spaces
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
       const data = await response.json();
-      console.log('Signup with OTP response:', data);
 
-      if (!response.ok || !data.success) {
+      console.log('Signup response status:', response.status);
+      console.log('Signup response data:', data);
+
+      if (!response.ok) {
         throw new Error(data.message || 'Signup failed');
       }
 
-      return data.data;
+      // Return the AuthResponse which contains accessToken and user
+      return data.data; // The actual AuthResponse is in data.data
     } catch (error: any) {
+      clearTimeout(timeoutId);
       console.error('Signup with OTP error:', error);
-      throw new Error(error.message || 'Signup failed');
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout. Please try again.');
+      }
+      throw error;
     }
   },
-
+ 
+  
   // Just verify OTP (non-consuming)
   async verifySignupOTP(email: string, otp: string) {
     try {
@@ -353,13 +376,8 @@ export const authService = {
   },
 };
 
-// ============= OTP SERVICE =============
-// WARNING: These endpoints DO NOT exist in your backend!
-// Your backend only supports OTP through authService methods above.
-// If you need these, you must add corresponding endpoints in your backend first.
 export const otpService = {
-  // DEPRECATED: Use authService.sendSignupOTP() instead
-  // This endpoint /otp/send does NOT exist in backend
+
   async sendOTP(email: string, type: 'SIGNUP_VERIFICATION' | 'PASSWORD_RESET' = 'SIGNUP_VERIFICATION') {
     console.warn('otpService.sendOTP is deprecated. Use authService.sendSignupOTP or authService.sendPasswordResetOTP instead');
     try {
@@ -374,8 +392,6 @@ export const otpService = {
     }
   },
 
-  // DEPRECATED: Use authService.verifySignupOTP() or authService.verifyPasswordResetOTP() instead
-  // This endpoint /otp/verify does NOT exist in backend
   async verifyOTP(data: { email: string; otp: string; type?: string }) {
     console.warn('otpService.verifyOTP is deprecated. Use authService.verifySignupOTP or authService.verifyPasswordResetOTP instead');
     try {
@@ -391,8 +407,6 @@ export const otpService = {
     }
   },
 
-  // DEPRECATED: Use authService.signupWithOTP() instead
-  // This endpoint /otp/signup-with-otp does NOT exist in backend
   async signupWithOtp(data: { name: string; email: string; password: string; otp: string }) {
     console.warn('otpService.signupWithOtp is deprecated. Use authService.signupWithOTP instead');
     try {
@@ -403,9 +417,6 @@ export const otpService = {
       throw new Error(error.response?.data?.message || 'Failed to complete signup');
     }
   },
-
-  // This endpoint /otp/status does NOT exist in backend
-  // If you need this, add it to backend first
   async getOtpStatus(email: string) {
     console.warn('otpService.getOtpStatus endpoint does not exist in backend');
     try {
