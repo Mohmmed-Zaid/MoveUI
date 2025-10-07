@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 
-type Mode = 'login' | 'signup' | 'otp' | 'forgot' | 'reset';
+type Mode = 'login' | 'signup' | 'forgot' | 'reset';
 
 interface FormData {
   name: string;
@@ -37,7 +37,7 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
-  const { login, signup, sendOTP, verifyOTP, quickLogin } = useAuth();
+  const { login, signup, quickLogin } = useAuth();
   const { isDark } = useTheme();
   const navigate = useNavigate();
 
@@ -76,7 +76,7 @@ const LoginPage: React.FC = () => {
       }
     }
 
-    if ((mode === 'otp' || mode === 'reset') && !formData.otp) {
+    if (mode === 'reset' && !formData.otp) {
       newErrors.otp = 'OTP is required';
     }
 
@@ -113,35 +113,27 @@ const LoginPage: React.FC = () => {
       setErrors({});
       setLoading(true);
 
-      if (mode === 'reset') {
-        // For password reset OTP
-        const endpoint = `${API_BASE_URL}/auth/otp/password-reset/send`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
+      // For password reset OTP
+      const endpoint = `${API_BASE_URL}/auth/otp/password-reset/send`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: formData.email }),
-          signal: controller.signal,
-        });
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email }),
+        signal: controller.signal,
+      });
 
-        clearTimeout(timeoutId);
-        const data = await response.json();
+      clearTimeout(timeoutId);
+      const data = await response.json();
 
-        if (data.success) {
-          startCountdown();
-          setSuccessMessage('OTP resent successfully!');
-          setTimeout(() => setSuccessMessage(''), 3000);
-        } else {
-          setErrors({ general: data.message || 'Failed to resend OTP' });
-        }
-      } else {
-        // For signup OTP
-        await sendOTP(formData.email);
+      if (data.success) {
         startCountdown();
         setSuccessMessage('OTP resent successfully!');
         setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        setErrors({ general: data.message || 'Failed to resend OTP' });
       }
     } catch (error: any) {
       setErrors({ general: error.message || 'Failed to resend OTP. Please try again.' });
@@ -169,13 +161,6 @@ const LoginPage: React.FC = () => {
           email: formData.email,
           password: formData.password,
         });
-        setMode('otp');
-        startCountdown();
-        setSuccessMessage('OTP sent to your email!');
-        setTimeout(() => setSuccessMessage(''), 3000);
-      } 
-      else if (mode === 'otp') {
-        await verifyOTP(formData.email, formData.otp);
         navigate('/app');
       }
       else if (mode === 'forgot') {
@@ -270,13 +255,6 @@ const LoginPage: React.FC = () => {
     setShowNewPassword(false);
   };
 
-  const goBackToSignup = () => {
-    setMode('signup');
-    setFormData(prev => ({ ...prev, otp: '' }));
-    setErrors({});
-    setOtpCountdown(0);
-  };
-
   const renderQuickLoginButton = () => {
     if (process.env.NODE_ENV !== 'development') return null;
     
@@ -356,8 +334,8 @@ const LoginPage: React.FC = () => {
         {/* Quick Login Button */}
         {renderQuickLoginButton()}
 
-        {/* Mode Switch - Hide during OTP, forgot, and reset */}
-        {mode !== 'otp' && mode !== 'forgot' && mode !== 'reset' && (
+        {/* Mode Switch - Hide during forgot and reset */}
+        {mode !== 'forgot' && mode !== 'reset' && (
           <div className={`flex rounded-xl p-1 mb-6 ${
             isDark ? 'bg-slate-700/50' : 'bg-slate-100/50'
           }`}>
@@ -391,28 +369,6 @@ const LoginPage: React.FC = () => {
             >
               Sign Up
             </button>
-          </div>
-        )}
-
-        {/* OTP Header */}
-        {mode === 'otp' && (
-          <div className="text-center mb-6">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 ${
-              isDark ? 'bg-green-600/20' : 'bg-green-100'
-            }`}>
-              <Shield className={`w-6 h-6 ${
-                isDark ? 'text-green-400' : 'text-green-600'
-              }`} />
-            </div>
-            <h3 className={`text-lg font-semibold mb-2 ${
-              isDark ? 'text-slate-200' : 'text-slate-800'
-            }`}>Verify Your Email</h3>
-            <p className={`text-sm ${
-              isDark ? 'text-slate-400' : 'text-slate-600'
-            }`}>
-              We've sent a 6-digit code to<br />
-              <span className="font-medium">{formData.email}</span>
-            </p>
           </div>
         )}
 
@@ -473,62 +429,7 @@ const LoginPage: React.FC = () => {
             </div>
           )}
 
-          {mode === 'otp' ? (
-            // OTP Input
-            <div className="space-y-2">
-              <label className={`text-sm font-medium ${
-                isDark ? 'text-slate-200' : 'text-slate-700'
-              }`}>Enter OTP</label>
-              <div className="relative">
-                <Shield className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${
-                  isDark ? 'text-slate-400' : 'text-slate-500'
-                }`} />
-                <input
-                  type="text"
-                  maxLength={6}
-                  value={formData.otp}
-                  onChange={(e) => handleInputChange('otp', e.target.value.replace(/\D/g, ''))}
-                  className={`w-full pl-10 pr-4 py-3 backdrop-blur-sm border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent transition-all duration-200 text-center text-lg font-mono tracking-widest ${
-                    isDark 
-                      ? `bg-slate-700/50 text-white placeholder-slate-400 focus:ring-green-400/50 ${
-                          errors.otp ? 'border-red-400/50' : 'border-slate-600/50'
-                        }` 
-                      : `bg-white/70 text-slate-900 placeholder-slate-500 focus:ring-green-500/50 ${
-                          errors.otp ? 'border-red-300/50' : 'border-slate-300/50'
-                        }`
-                  }`}
-                  placeholder="000000"
-                />
-              </div>
-              {errors.otp && <p className={`text-xs ${
-                isDark ? 'text-red-300' : 'text-red-600'
-              }`}>{errors.otp}</p>}
-              
-              {/* Resend OTP */}
-              <div className="text-center">
-                {otpCountdown > 0 ? (
-                  <p className={`text-xs ${
-                    isDark ? 'text-slate-400' : 'text-slate-500'
-                  }`}>
-                    Resend OTP in {otpCountdown}s
-                  </p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleResendOTP}
-                    disabled={loading}
-                    className={`text-xs transition-colors disabled:opacity-50 ${
-                      isDark 
-                        ? 'text-blue-400 hover:text-blue-300' 
-                        : 'text-blue-600 hover:text-blue-700'
-                    }`}
-                  >
-                    {loading ? 'Sending...' : 'Resend OTP'}
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : mode === 'forgot' ? (
+          {mode === 'forgot' ? (
             // Forgot Password - Email only
             <div className="space-y-2">
               <label className={`text-sm font-medium ${
@@ -816,37 +717,20 @@ const LoginPage: React.FC = () => {
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 <span>
                   {mode === 'login' ? 'Signing in...' : 
-                   mode === 'signup' ? 'Sending OTP...' : 
-                   mode === 'otp' ? 'Verifying...' :
+                   mode === 'signup' ? 'Creating account...' : 
                    mode === 'forgot' ? 'Sending OTP...' :
                    'Resetting...'}
                 </span>
               </div>
             ) : (
               mode === 'login' ? 'Sign In' : 
-              mode === 'signup' ? 'Send OTP' : 
-              mode === 'otp' ? 'Verify & Create Account' :
+              mode === 'signup' ? 'Create Account' : 
               mode === 'forgot' ? 'Send Reset OTP' :
               'Reset Password'
             )}
           </button>
 
-          {/* Back to Signup/Login for OTP/Reset */}
-          {mode === 'otp' && (
-            <button
-              type="button"
-              onClick={goBackToSignup}
-              className={`w-full text-sm transition-colors flex items-center justify-center gap-2 ${
-                isDark 
-                  ? 'text-slate-400 hover:text-slate-200' 
-                  : 'text-slate-600 hover:text-slate-800'
-              }`}
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Sign Up
-            </button>
-          )}
-
+          {/* Back to Login for Reset */}
           {mode === 'reset' && (
             <button
               type="button"
@@ -879,7 +763,7 @@ const LoginPage: React.FC = () => {
           </div>
         )}
 
-        {mode !== 'otp' && mode !== 'forgot' && mode !== 'reset' && (
+        {mode !== 'forgot' && mode !== 'reset' && (
           <div className="mt-8 text-center">
             <div className={`text-sm ${
               isDark ? 'text-slate-400' : 'text-slate-500'
