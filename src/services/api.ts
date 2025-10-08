@@ -129,54 +129,57 @@ export const authService = {
   },
 
   // Basic signup (without OTP) - for backward compatibility
-  async signup(userData: { name: string; email: string; password: string }) {
-    try {
-      const response = await api.post('/auth/signup', userData);
-      return response.data.data;
-    } catch (error: any) {
-      console.error('Signup error:', error);
-      throw new Error(error.response?.data?.message || 'Signup failed');
-    }
-  },
-
-  // Send signup OTP
-  async sendSignupOTP(email: string) {
+ async signup(userData: { name: string; email: string; password: string }) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     try {
-      console.log('Sending OTP request for email:', email);
+      console.log('Direct signup for email:', userData.email);
       
-      const response = await fetch(`${API_BASE}/otp/send`, {
+      const requestBody = {
+        name: userData.name.trim(),
+        email: userData.email.trim().toLowerCase(),
+        password: userData.password
+      };
+
+      console.log('Request body:', { ...requestBody, password: '***' });
+
+      const response = await fetch(`${API_BASE}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: email.trim().toLowerCase(),
-          type: 'SIGNUP_VERIFICATION'
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
       const data = await response.json();
 
-      console.log('OTP send response:', data);
+      console.log('Signup response:', data);
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Failed to send OTP');
+      if (!response.ok) {
+        throw new Error(data.message || 'Signup failed');
       }
 
-      return data;
+      // Handle both response formats: data.data or direct
+      if (data.data && data.data.accessToken && data.data.user) {
+        return data.data;
+      }
+      
+      // Fallback: direct response (for backward compatibility)
+      if (data.accessToken && data.user) {
+        return data;
+      }
+      
+      throw new Error('Invalid response format from server');
     } catch (error: any) {
       clearTimeout(timeoutId);
-      console.error('Send OTP error:', error);
+      console.error('Signup error:', error);
       if (error.name === 'AbortError') {
-        throw new Error('Request timeout. Please try again.');
+        throw new Error('Server is taking too long to respond. Please try again.');
       }
-      throw new Error(error.message || 'Failed to send OTP');
+      throw new Error(error.message || 'Signup failed');
     }
   },
-
   // Send password reset OTP
   async sendPasswordResetOTP(email: string) {
     const controller = new AbortController();
