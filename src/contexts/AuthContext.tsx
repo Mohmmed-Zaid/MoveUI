@@ -171,71 +171,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signup = async (userData: { name: string; email: string; password: string }): Promise<void> => {
     setLoading(true);
     try {
-      console.log('Starting signup process for:', userData.email);
+      console.log('Starting direct signup for:', userData.email);
       
-      localStorage.setItem('temp_signup_data', JSON.stringify(userData));
+      const response = await authService.signup(userData);
       
-      const response = await authService.sendSignupOTP(userData.email);
-      
-      console.log('Signup OTP sent successfully:', response);
-      
-    } catch (error: any) {
-      console.error('Signup error:', error);
-      localStorage.removeItem('temp_signup_data');
-      const errorMessage = error.message || 'Failed to send signup OTP';
-      throw new Error(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const sendOTP = async (email: string): Promise<void> => {
-    setLoading(true);
-    try {
-      console.log('Sending OTP to:', email);
-      
-      await authService.sendSignupOTP(email);
-      
-      console.log('OTP sent successfully');
-    } catch (error: any) {
-      console.error('Send OTP error:', error);
-      const errorMessage = error.message || 'Failed to send OTP';
-      throw new Error(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const verifyOTP = async (email: string, otp: string): Promise<void> => {
-    setLoading(true);
-    try {
-      console.log('Starting OTP verification for:', email);
-      
-      const tempSignupData = localStorage.getItem('temp_signup_data');
-      if (!tempSignupData) {
-        throw new Error('Signup data not found. Please start signup process again.');
-      }
-
-      const signupData = JSON.parse(tempSignupData);
-      
-      if (signupData.email.toLowerCase().trim() !== email.toLowerCase().trim()) {
-        throw new Error('Email mismatch. Please start signup process again.');
-      }
-
-      console.log('Calling signupWithOTP with:', {
-        name: signupData.name,
-        email: signupData.email,
-        otp: otp.trim()
-      });
-
-      const response = await authService.signupWithOTP({
-        name: signupData.name,
-        email: signupData.email,
-        password: signupData.password,
-        otp: otp.trim().replace(/\s+/g, '')
-      });
-      
-      console.log('Signup with OTP response:', response);
+      console.log('Signup response received:', response);
       
       if (response && response.accessToken && response.user) {
         localStorage.setItem('auth_token', response.accessToken);
@@ -251,22 +191,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
         localStorage.setItem('mapguide_user', JSON.stringify(authenticatedUser));
         localStorage.removeItem('mapguide_user_temp');
-        localStorage.removeItem('temp_signup_data');
         setUser(authenticatedUser);
         
-        console.log('Account created successfully:', authenticatedUser);
+        console.log('Signup successful, user set:', authenticatedUser);
       } else {
         throw new Error('Invalid response format from server');
       }
     } catch (error: any) {
-      console.error('Signup with OTP error:', error);
-      const errorMessage = error.message || 'OTP verification failed';
+      console.error('Signup error:', error);
+      const errorMessage = error.message || 'Signup failed';
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  const sendOTP = async (email: string): Promise<void> => {
+    console.warn('sendOTP is deprecated in direct signup flow');
+  };
+
+  const verifyOTP = async (email: string, otp: string): Promise<void> => {
+    console.warn('verifyOTP is deprecated in direct signup flow');
+  };
   const quickLogin = async (): Promise<void> => {
     setLoading(true);
     try {
