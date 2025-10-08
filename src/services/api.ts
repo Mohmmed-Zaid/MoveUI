@@ -129,57 +129,49 @@ export const authService = {
   },
 
   // Basic signup (without OTP) - for backward compatibility
- async signup(userData: { name: string; email: string; password: string }) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+async signup(userData: { name: string; email: string; password: string }) {
+  try {
+    console.log('Direct signup for email:', userData.email);
+    
+    const requestBody = {
+      name: userData.name.trim(),
+      email: userData.email.trim().toLowerCase(),
+      password: userData.password
+    };
 
-    try {
-      console.log('Direct signup for email:', userData.email);
-      
-      const requestBody = {
-        name: userData.name.trim(),
-        email: userData.email.trim().toLowerCase(),
-        password: userData.password
-      };
+    console.log('Request body:', { ...requestBody, password: '***' });
 
-      console.log('Request body:', { ...requestBody, password: '***' });
+    // Remove the timeout - let the server respond naturally
+    const response = await fetch(`${API_BASE}/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
 
-      const response = await fetch(`${API_BASE}/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
+    const data = await response.json();
 
-      clearTimeout(timeoutId);
-      const data = await response.json();
+    console.log('Signup response:', data);
 
-      console.log('Signup response:', data);
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Signup failed');
-      }
-
-      // Handle both response formats: data.data or direct
-      if (data.data && data.data.accessToken && data.data.user) {
-        return data.data;
-      }
-      
-      // Fallback: direct response (for backward compatibility)
-      if (data.accessToken && data.user) {
-        return data;
-      }
-      
-      throw new Error('Invalid response format from server');
-    } catch (error: any) {
-      clearTimeout(timeoutId);
-      console.error('Signup error:', error);
-      if (error.name === 'AbortError') {
-        throw new Error('Server is taking too long to respond. Please try again.');
-      }
-      throw new Error(error.message || 'Signup failed');
+    if (!response.ok) {
+      throw new Error(data.message || 'Signup failed');
     }
-  },
+
+    // Handle both response formats: data.data or direct
+    if (data.data && data.data.accessToken && data.data.user) {
+      return data.data;
+    }
+    
+    // Fallback: direct response (for backward compatibility)
+    if (data.accessToken && data.user) {
+      return data;
+    }
+    
+    throw new Error('Invalid response format from server');
+  } catch (error: any) {
+    console.error('Signup error:', error);
+    throw new Error(error.message || 'Signup failed');
+  }
+},
   // Send password reset OTP
   async sendPasswordResetOTP(email: string) {
     const controller = new AbortController();
