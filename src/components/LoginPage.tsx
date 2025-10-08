@@ -113,7 +113,6 @@ const LoginPage: React.FC = () => {
       setErrors({});
       setLoading(true);
 
-      // For password reset OTP
       const endpoint = `${API_BASE_URL}/auth/otp/password-reset/send`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
@@ -156,6 +155,7 @@ const LoginPage: React.FC = () => {
         navigate('/app');
       } 
       else if (mode === 'signup') {
+        // Direct signup without OTP
         await signup({
           name: formData.name,
           email: formData.email,
